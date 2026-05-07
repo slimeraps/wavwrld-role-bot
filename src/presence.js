@@ -20,6 +20,9 @@ async function handlePresence(presence) {
   const protectedRoles = config.protectedRoles || [];
   const blacklist = new Set((config.activityBlacklist || []).map((n) => n.toLowerCase()));
 
+  const memberHasVip = !!(config.vipRoleId && member.roles.cache.has(config.vipRoleId));
+  const onlyUsePremadeRoles = config.onlyUsePremadeRoles && !memberHasVip;
+
   const currentTargetRoleNames = new Set();
   let hasUnmatchedActivity = false;
 
@@ -75,7 +78,7 @@ async function handlePresence(presence) {
           }
         }
       }
-    } else if (config.onlyUsePremadeRoles) {
+    } else if (onlyUsePremadeRoles) {
       hasUnmatchedActivity = true;
       continue;
     } else {
@@ -197,7 +200,7 @@ async function handlePresence(presence) {
     await checkPromotedRolesEmpty(guild);
   }
 
-  if (config.onlyUsePremadeRoles && config.fallbackRoleId) {
+  if (onlyUsePremadeRoles && config.fallbackRoleId) {
     const fallbackRole = guild.roles.cache.get(config.fallbackRoleId);
     if (!fallbackRole) {
       console.warn(`Fallback role ID ${config.fallbackRoleId} not found in guild ${guild.name}`);
