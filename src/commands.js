@@ -3,6 +3,7 @@ const { config, persistConfig } = require("./config");
 const { sendMonitoring } = require("./monitoring");
 const { handleCleanupCmd, cleanupAndResync } = require("./cleanup");
 const m = require("./music");
+const { statsCmd } = require("./stats");
 
 function ctxFromMessage(message) {
   return {
@@ -95,6 +96,26 @@ const COMMANDS = [
     description: "Show how to use the music commands",
     aliases: ["h"],
     handler: helpCmd,
+  },
+  {
+    name: "stats",
+    description: "Show the most played games today or this week",
+    aliases: ["leaderboard", "lb"],
+    options: [
+      { 
+        name: "period",
+        type: ApplicationCommandOptionType.String,
+        required: false,
+        description: "daily or weekly (default: weekly)",
+        choices: [
+          { name: "daily", value: "daily" },
+          { name: "weekly", value: "weekly" },
+        ],
+      },
+    ],
+    parseText: (args) => ({ period: args[0]?.toLowerCase() || "weekly" }),
+    parseSlash: (i) => ({ period: i.options.getString("period") || "weekly" }),
+    handler: statsCmd,
   },
   {
     name: "play",
