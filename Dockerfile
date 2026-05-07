@@ -20,6 +20,13 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     python3 \
+    curl \
+    unzip \
+  && curl -fsSL https://github.com/denoland/deno/releases/latest/download/deno-x86_64-unknown-linux-gnu.zip -o /tmp/deno.zip \
+  && unzip /tmp/deno.zip -d /usr/local/bin \
+  && rm /tmp/deno.zip \
+  && apt-get purge -y curl unzip \
+  && apt-get autoremove -y \
   && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /app/node_modules ./node_modules
