@@ -16,4 +16,19 @@ function stripTimerPrefix(name) {
   return name.replace(/^\[\d+m\]\s*/, "");
 }
 
-module.exports = { sleep, getTargetRoleName, ensurePlayingPrefix, stripTimerPrefix };
+function sanitizeVoiceChannelName(name) {
+  return name.replace(/[╰┋╭]/g, "").replace(/\s+/g, " ").trim();
+}
+
+function voiceRoleNameForChannel(channel) {
+  return `In ${sanitizeVoiceChannelName(channel.name)}`;
+}
+
+module.exports = {
+  sleep,
+  getTargetRoleName,
+  ensurePlayingPrefix,
+  stripTimerPrefix,
+  sanitizeVoiceChannelName,
+  voiceRoleNameForChannel,
+};

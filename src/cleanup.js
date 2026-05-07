@@ -3,8 +3,9 @@ const { config, premadeRoleIdsSet, ROLES_FILE } = require("./config");
 const { sleep, stripTimerPrefix } = require("./util");
 const { sendMonitoring } = require("./monitoring");
 const client = require("./client");
-const { roleMap, autoManaged, promotedRoles, originalPositions, saveData } = require("./state");
+const { roleMap, autoManaged, promotedRoles, originalPositions, voiceChannelRoles, saveData } = require("./state");
 const { handlePresence } = require("./presence");
+const { initVoiceRolesForGuild } = require("./voice");
 
 async function cleanupEmptyManagedRoles(guild) {
   if (!config.autoDeleteUnusedRoles) return;
@@ -78,6 +79,8 @@ async function resyncAllMembers() {
     }
     console.log(`Resynced ${processed} members in ${guild.name}`);
     await sendMonitoring(`✅ Resynced ${processed} members in **${guild.name}**`);
+
+    await initVoiceRolesForGuild(guild);
   }
 
   console.log("Full presence resync completed.");
@@ -199,6 +202,7 @@ async function cleanupAndResync() {
     autoManaged[guildId] = new Set();
     promotedRoles[guildId] = [];
     originalPositions[guildId] = {};
+    voiceChannelRoles[guildId] = {};
     if (!config.dryRun) saveData();
 
     await sendMonitoring(`🧹 Cleanup in **${guild.name}** finished – removed ${removalCount} assignments, removed fallback from ${fallbackRemovedCount}, deleted ${deletedCount} roles.`);
@@ -290,6 +294,7 @@ async function handleCleanupCmd(ctx) {
     autoManaged[guildId] = new Set();
     promotedRoles[guildId] = [];
     originalPositions[guildId] = {};
+    voiceChannelRoles[guildId] = {};
   }
 
   const renameDelay = 3000;

@@ -6,6 +6,7 @@ const autoManaged = {};        // guildId -> Set<roleName>
 const promotedRoles = {};      // guildId -> [roleId, ...] (newest at index 0)
 const originalPositions = {};  // guildId -> { roleId: position }
 const guildVolumes = {};       // guildId -> number (0-200)
+const voiceChannelRoles = {};  // guildId -> { channelId: roleId }
 
 if (fs.existsSync(ROLES_FILE)) {
   try {
@@ -16,12 +17,14 @@ if (fs.existsSync(ROLES_FILE)) {
         autoManaged[guildId] = new Set(guildData.auto || []);
         promotedRoles[guildId] = guildData.promoted || [];
         originalPositions[guildId] = guildData.originalPositions || {};
+        voiceChannelRoles[guildId] = guildData.voiceChannels || {};
         if (typeof guildData.volume === "number") guildVolumes[guildId] = guildData.volume;
       } else {
         roleMap[guildId] = guildData;
         autoManaged[guildId] = new Set(Object.keys(guildData));
         promotedRoles[guildId] = [];
         originalPositions[guildId] = {};
+        voiceChannelRoles[guildId] = {};
       }
     }
   } catch (e) {
@@ -34,6 +37,7 @@ function saveData() {
   const allGuildIds = new Set([
     ...Object.keys(roleMap),
     ...Object.keys(guildVolumes),
+    ...Object.keys(voiceChannelRoles),
   ]);
   for (const guildId of allGuildIds) {
     out[guildId] = {
@@ -41,10 +45,11 @@ function saveData() {
       auto: [...(autoManaged[guildId] || [])],
       promoted: promotedRoles[guildId] || [],
       originalPositions: originalPositions[guildId] || {},
+      voiceChannels: voiceChannelRoles[guildId] || {},
     };
     if (guildVolumes[guildId] != null) out[guildId].volume = guildVolumes[guildId];
   }
   fs.writeFileSync(ROLES_FILE, JSON.stringify(out, null, 2), "utf8");
 }
 
-module.exports = { roleMap, autoManaged, promotedRoles, originalPositions, guildVolumes, saveData };
+module.exports = { roleMap, autoManaged, promotedRoles, originalPositions, guildVolumes, voiceChannelRoles, saveData };

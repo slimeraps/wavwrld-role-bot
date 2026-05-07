@@ -2,13 +2,21 @@ const { config } = require("./config");
 const { stripTimerPrefix } = require("./util");
 const { sendMonitoring } = require("./monitoring");
 const client = require("./client");
-const { roleMap, autoManaged, promotedRoles, saveData } = require("./state");
+const { roleMap, autoManaged, promotedRoles, voiceChannelRoles, saveData } = require("./state");
 const { initRoleTimersForGuild, enableTimers } = require("./timers");
 const { promoteRole, unpromoteRole, checkPromotedRolesEmpty } = require("./promotion");
 const { handlePresence } = require("./presence");
 const { cleanupEmptyManagedRoles } = require("./cleanup");
 const { initMusic } = require("./music");
 const { dispatchText, dispatchSlash, registerSlashCommands, NAME_INDEX } = require("./commands");
+const {
+  handleVoiceStateUpdate,
+  initVoiceRolesForGuild,
+  handleVoiceChannelRename,
+  handleVoiceChannelDelete,
+  isVoiceChannel,
+  pruneVoiceRoleId,
+} = require("./voice");
 
 function register() {
   client.once("ready", async () => {
@@ -61,6 +69,7 @@ function register() {
 
       await cleanupEmptyManagedRoles(guild);
       await checkPromotedRolesEmpty(guild);
+      await initVoiceRolesForGuild(guild);
     }
 
     // Ensure fallback role is never promoted (demote it if it was mistakenly promoted before)
@@ -103,6 +112,21 @@ function register() {
     await handlePresence(newPresence);
   });
 
+  client.on("voiceStateUpdate", async (oldState, newState) => {
+    await handleVoiceStateUpdate(oldState, newState);
+  });
+
+  client.on("channelUpdate", async (oldChannel, newChannel) => {
+    if (!isVoiceChannel(newChannel)) return;
+    if (oldChannel.name === newChannel.name) return;
+    await handleVoiceChannelRename(newChannel);
+  });
+
+  client.on("channelDelete", async (channel) => {
+    if (!isVoiceChannel(channel)) return;
+    await handleVoiceChannelDelete(channel);
+  });
+
   client.on("messageCreate", async (message) => {
     if (message.author.bot) return;
     const prefix = config.commandPrefix || "!";
@@ -131,14 +155,16 @@ function register() {
       if (!config.dryRun) saveData();
     }
 
-    const managed = autoManaged[guildId];
-    if (!managed) return;
+    const voicePruned = pruneVoiceRoleId(guildId, role.id);
 
-    if (managed.has(role.name) && roleMap[guildId]?.[role.name] === role.id) {
+    const managed = autoManaged[guildId];
+    if (managed && managed.has(role.name) && roleMap[guildId]?.[role.name] === role.id) {
       managed.delete(role.name);
       delete roleMap[guildId][role.name];
       console.log(`Managed role "${role.name}" was deleted externally – removed from tracking`);
       await sendMonitoring(`🗑️ **External deletion** – Managed role \`${role.name}\` was deleted in **${role.guild.name}** – removed from tracking.`);
+      if (!config.dryRun) saveData();
+    } else if (voicePruned) {
       if (!config.dryRun) saveData();
     }
   });
