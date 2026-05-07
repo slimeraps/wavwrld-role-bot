@@ -141,6 +141,14 @@ npm start
 `roles.json` will be written next to `bot.js` when running locally (because
 `DATA_DIR` is unset).
 
+## VIP role behavior
+
+`config.vipRoleId` (when set) marks a role as VIP. Any member who holds that
+role bypasses `config.onlyUsePremadeRoles` — even if the flag is on, the bot
+will auto-create roles for their unmatched activities instead of falling back
+to the fallback role. Members without the VIP role are unaffected. Leaving
+`vipRoleId` blank disables the bypass entirely.
+
 ## Privileged Gateway Intents
 
 Don't forget to enable these in the Discord Developer Portal under your
