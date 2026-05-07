@@ -4,6 +4,7 @@ const { register } = require("./src/events");
 const { cleanupEmptyManagedRoles } = require("./src/cleanup");
 const { checkPromotedRolesEmpty } = require("./src/promotion");
 const { updateRoleTimers } = require("./src/timers");
+const { startPanel } = require("./src/panel");
 
 if (!token) {
   console.error("No Discord token found. Set the DISCORD_TOKEN environment variable.");
@@ -11,6 +12,7 @@ if (!token) {
 }
 
 register();
+startPanel(client);
 
 setInterval(async () => {
   for (const guild of client.guilds.cache.values()) {
