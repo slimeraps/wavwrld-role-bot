@@ -5,6 +5,7 @@ const { sendMonitoring } = require("./monitoring");
 const { roleMap, autoManaged, promotedRoles, voiceChannelRoles, saveData } = require("./state");
 
 const VOICE_CHANNEL_TYPES = new Set([ChannelType.GuildVoice, ChannelType.GuildStageVoice]);
+const VOICE_ROLE_COLOR = 0xffa6c9;
 
 function isVoiceChannel(channel) {
   return !!channel && VOICE_CHANNEL_TYPES.has(channel.type);
@@ -130,6 +131,18 @@ async function ensureVoiceRoleForChannel(guild, channel) {
       autoManaged[guild.id].add(desiredName);
       if (!config.dryRun) saveData();
     }
+
+    if (role.color !== VOICE_ROLE_COLOR) {
+      if (config.dryRun) {
+        console.log(`[DRY RUN] Would set voice role "${role.name}" color to #${VOICE_ROLE_COLOR.toString(16)}`);
+      } else {
+        try {
+          await role.setColor(VOICE_ROLE_COLOR, "Voice role color sync");
+        } catch (err) {
+          console.error(`Failed to set voice role color for "${role.name}":`, err.message);
+        }
+      }
+    }
     return role;
   }
 
@@ -143,6 +156,7 @@ async function ensureVoiceRoleForChannel(guild, channel) {
     role = await guild.roles.create({
       name: desiredName,
       hoist: true,
+      color: VOICE_ROLE_COLOR,
       reason: `Auto-created for voice channel "${channel.name}"`,
     });
     console.log(`Created voice role "${desiredName}"`);

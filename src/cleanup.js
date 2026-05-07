@@ -330,10 +330,11 @@ async function handleCleanupCmd(ctx) {
     }
   }
 
-  await ctx.followUp(`✅ Cleanup complete. Removed premade roles from ${premadeRemovedCount} memberships, fallback role from ${fallbackRemovedCount} members, deleted ${deletedCount} bot‑created roles. Restarting.`);
-  await sendMonitoring(`✅ **Cleanup finished** – Premade roles removed from ${premadeRemovedCount} members, fallback from ${fallbackRemovedCount}, ${deletedCount} bot roles deleted. Restarting.`);
-  console.log("Restarting after cleanup...");
-  process.exit(0);
+  await ctx.followUp(`✅ Cleanup complete. Removed premade roles from ${premadeRemovedCount} memberships, fallback role from ${fallbackRemovedCount} members, deleted ${deletedCount} bot‑created roles. Re-applying roles...`);
+  await sendMonitoring(`✅ **Cleanup finished** – Premade roles removed from ${premadeRemovedCount} members, fallback from ${fallbackRemovedCount}, ${deletedCount} bot roles deleted. Re-applying roles...`);
+  console.log("Re-applying roles after cleanup...");
+  await resyncAllMembers();
+  await ctx.followUp("✅ Roles re-applied based on current presences and voice states.");
 }
 
 module.exports = { cleanupEmptyManagedRoles, resyncAllMembers, cleanupAndResync, handleCleanupCmd };
