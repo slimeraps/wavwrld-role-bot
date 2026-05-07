@@ -209,14 +209,10 @@ async function cleanupAndResync() {
   await sendMonitoring("✅ **Toggle resync complete** – all roles reassigned according to new configuration.");
 }
 
-async function handleCleanupCommand(message) {
-  if (message.author.id !== config.ownerId) {
-    await message.reply("❌ You are not authorized to use this command.");
-    return;
-  }
-
-  await message.reply("🧹 Removing premade roles and fallback/active role from all members, then cleaning up bot‑created roles...");
-  await sendMonitoring(`🧹 **Manual cleanup initiated** by ${message.author.tag} (${message.author.id})`);
+async function handleCleanupCmd(ctx) {
+  await ctx.defer();
+  await ctx.reply("🧹 Removing premade roles and fallback/active role from all members, then cleaning up bot‑created roles...");
+  await sendMonitoring(`🧹 **Manual cleanup initiated** by ${ctx.author.tag} (${ctx.author.id})`);
   console.log("Starting cleanup – removing premade and fallback roles, deleting bot-created roles...");
 
   const protectedRolesSet = new Set(config.protectedRoles || []);
@@ -329,10 +325,10 @@ async function handleCleanupCommand(message) {
     }
   }
 
-  await message.reply(`✅ Cleanup complete. Removed premade roles from ${premadeRemovedCount} memberships, fallback role from ${fallbackRemovedCount} members, deleted ${deletedCount} bot‑created roles. Restarting.`);
+  await ctx.followUp(`✅ Cleanup complete. Removed premade roles from ${premadeRemovedCount} memberships, fallback role from ${fallbackRemovedCount} members, deleted ${deletedCount} bot‑created roles. Restarting.`);
   await sendMonitoring(`✅ **Cleanup finished** – Premade roles removed from ${premadeRemovedCount} members, fallback from ${fallbackRemovedCount}, ${deletedCount} bot roles deleted. Restarting.`);
   console.log("Restarting after cleanup...");
   process.exit(0);
 }
 
-module.exports = { cleanupEmptyManagedRoles, resyncAllMembers, cleanupAndResync, handleCleanupCommand };
+module.exports = { cleanupEmptyManagedRoles, resyncAllMembers, cleanupAndResync, handleCleanupCmd };

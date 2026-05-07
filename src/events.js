@@ -1,4 +1,4 @@
-const { config, persistConfig } = require("./config");
+const { config } = require("./config");
 const { stripTimerPrefix } = require("./util");
 const { sendMonitoring } = require("./monitoring");
 const client = require("./client");
@@ -6,7 +6,9 @@ const { roleMap, autoManaged, promotedRoles, saveData } = require("./state");
 const { initRoleTimersForGuild, enableTimers } = require("./timers");
 const { promoteRole, unpromoteRole, checkPromotedRolesEmpty } = require("./promotion");
 const { handlePresence } = require("./presence");
-const { cleanupEmptyManagedRoles, cleanupAndResync, handleCleanupCommand } = require("./cleanup");
+const { cleanupEmptyManagedRoles } = require("./cleanup");
+const { initMusic } = require("./music");
+const { dispatchText, dispatchSlash, registerSlashCommands, NAME_INDEX } = require("./commands");
 
 function register() {
   client.once("ready", async () => {
@@ -81,6 +83,20 @@ function register() {
     for (const guild of client.guilds.cache.values()) {
       await initRoleTimersForGuild(guild);
     }
+
+    try {
+      await initMusic(client);
+    } catch (err) {
+      console.error("Music module failed to initialize:", err.message);
+      await sendMonitoring(`⚠️ Music module failed to load: ${err.message}`, { noDryRunPrefix: true });
+    }
+
+    try {
+      await registerSlashCommands(client);
+    } catch (err) {
+      console.error("Failed to register slash commands:", err.message);
+      await sendMonitoring(`⚠️ Slash command registration failed: ${err.message}`, { noDryRunPrefix: true });
+    }
   });
 
   client.on("presenceUpdate", async (oldPresence, newPresence) => {
@@ -93,35 +109,17 @@ function register() {
     if (!message.content.startsWith(prefix)) return;
 
     const args = message.content.slice(prefix.length).trim().split(/ +/);
-    const command = args[0].toLowerCase();
+    const command = args[0]?.toLowerCase();
+    if (!command) return;
 
-    if (command === "cleanup") {
-      await handleCleanupCommand(message);
-      return;
+    if (NAME_INDEX.has(command)) {
+      await dispatchText(message, command, args.slice(1));
     }
+  });
 
-    if (command === "premade") {
-      if (message.author.id !== config.ownerId) {
-        await message.reply("❌ You are not authorized to use this command.");
-        return;
-      }
-
-      const newValue = !config.onlyUsePremadeRoles;
-      config.onlyUsePremadeRoles = newValue;
-
-      try {
-        persistConfig();
-        await message.reply(`⚙️ \`onlyUsePremadeRoles\` has been set to **${newValue}**. Removing all bot‑managed roles, deleting created roles, and resyncing…`);
-        await sendMonitoring(`🔁 **Manual toggle** – \`onlyUsePremadeRoles\` changed to **${newValue}** by ${message.author.tag}`);
-      } catch (err) {
-        console.error("Failed to write config.json:", err.message);
-        await message.reply(`⚠️ Could not save config file: ${err.message}. The setting changed in memory only.`);
-      }
-
-      await cleanupAndResync();
-      await message.reply(`✅ Resync finished. Role assignments now follow \`onlyUsePremadeRoles = ${newValue}\`.`);
-      return;
-    }
+  client.on("interactionCreate", async (interaction) => {
+    if (!interaction.isChatInputCommand()) return;
+    await dispatchSlash(interaction);
   });
 
   client.on("roleDelete", async (role) => {

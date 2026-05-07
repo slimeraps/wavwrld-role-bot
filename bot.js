@@ -19,6 +19,6 @@ setInterval(async () => {
   }
 }, 30 * 60 * 1000);
 
-setInterval(updateRoleTimers, 5 * 60 * 1000);
+setInterval(updateRoleTimers, 60 * 1000);
 
 client.login(token);
