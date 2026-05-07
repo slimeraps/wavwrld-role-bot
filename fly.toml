@@ -1,0 +1,27 @@
+# Fly.io app config. Run `flyctl launch --no-deploy` first to claim a name,
+# or edit `app` below before deploying.
+app = "wavwrld-role-bot"
+primary_region = "ord"
+
+[build]
+
+[env]
+  NODE_ENV = "production"
+  DATA_DIR = "/data"
+
+[[mounts]]
+  source = "bot_data"
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
+
+# Discord bots are persistent workers — no HTTP service, just keep the process alive.
+[processes]
+  app = "node bot.js"
+
+# Always restart the machine when the process exits — the cleanup command exits the
+# process intentionally and we want fly to bring it back up rather than leave it stopped.
+[[restart]]
+  policy = "always"

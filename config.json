@@ -1,0 +1,13 @@
+{
+  "ownerId": "",
+  "commandPrefix": "!",
+  "dryRun": false,
+  "onlyUsePremadeRoles": true,
+  "fallbackRoleId": "",
+  "vipRoleId": "",
+  "monitoringChannelId": "",
+  "protectedRoles": [],
+  "activityRoleMap": {},
+  "premadeRoleIds": {},
+  "activityBlacklist": []
+}
