@@ -4,6 +4,7 @@ const { sendMonitoring } = require("./monitoring");
 const { roleMap, autoManaged, promotedRoles, saveData } = require("./state");
 const { startRoleTimer, stopRoleTimer } = require("./timers");
 const { checkPromotedRolesEmpty } = require("./promotion");
+const { logActivity } = require("./stats");
 
 async function handlePresence(presence) {
   const member = presence.member;
@@ -68,6 +69,7 @@ async function handlePresence(presence) {
           try {
             await member.roles.add(role, `Started playing ${activity.name}`);
             console.log(`+ ${member.user.tag} → ${role.name}`);
+            logActivity(guildId, activity.name);
             await sendMonitoring(`➕ **Role added** – \`${role.name}\` assigned to ${member.user.tag} (${member.id}) for playing \`${activity.name}\``);
             if (wasRoleEmpty) {
               await startRoleTimer(guild, role, targetRoleName);
@@ -135,6 +137,7 @@ async function handlePresence(presence) {
           try {
             await member.roles.add(role, `Started playing ${activity.name}`);
             console.log(`+ ${member.user.tag} → ${role.name}`);
+            logActivity(guildId, activity.name);
             await sendMonitoring(`➕ **Role added** – \`${role.name}\` assigned to ${member.user.tag} (${member.id}) for playing \`${activity.name}\``);
             if (wasRoleEmpty) {
               await startRoleTimer(guild, role, targetRoleName);
