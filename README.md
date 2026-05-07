@@ -1,7 +1,49 @@
-# Discord Game Role Bot — V8.3 (modular)
+# Discord Game Role Bot — V9 (music + slash commands)
 
-Same bot as `V8.2`, repackaged for hosting **and** broken into modules so
-`bot.js` is a thin entry point instead of a 1k-line file.
+V9 keeps everything from V8.4 (presence-based role automation, VIP bypass,
+cleanup/premade commands) and adds a music module, slash commands, and a
+unified command registry.
+
+## What changed vs V8.4
+
+**New features:**
+- **Music module** — `/play`, `/pause`, `/resume`, `/skip`, `/stop`, `/queue`,
+  `/nowplaying`, `/volume`, `/help`. Plays YouTube URLs, Spotify URLs (resolved
+  via metadata → YouTube), SoundCloud URLs, and free-text searches.
+- **Reaction-based picker** — text searches that return multiple matches post
+  an embed with the top 3 results as 1️⃣/2️⃣/3️⃣ reactions; only the user who
+  ran the command can pick. 30s timeout, ❌ to cancel.
+- **Persistent per-guild volume** — saved to `roles.json`, applies to future
+  `/play` calls so the bot doesn't blast at default volume after a restart.
+- **VIP-gated** — every music command requires the role in `config.vipRoleId`.
+  `cleanup` / `premade` remain owner-only.
+- **Slash + text parity** — every command works as both `/cmd` and `!cmd`.
+  The bot registers slash specs per-guild on `ready`, so changes propagate
+  instantly without waiting for global propagation.
+
+**New / changed modules:**
+- `src/music.js` — music player init, command handlers, reaction picker
+- `src/commands.js` — central command registry, slash spec generation, dispatchers,
+  VIP/owner gates, ctx abstraction unifying message and interaction handling
+- `src/cleanup.js` — `handleCleanupCommand(message)` → `handleCleanupCmd(ctx)`
+- `src/events.js` — `messageCreate` and `interactionCreate` both route through
+  the central dispatcher; calls `initMusic()` and `registerSlashCommands()` on ready
+- `src/state.js` — added `guildVolumes` map, persisted alongside role data
+- `src/client.js` — added `GuildVoiceStates` and `GuildMessageReactions` intents
+
+**Hosting / Docker changes:**
+- Base image is now **`node:22-bookworm-slim`** (Node 20 lacks `webidl.util.markAsUncloneable`
+  required by latest `undici`).
+- Multi-stage build: stage 1 has `python3 make g++` for native module compilation
+  (`@discordjs/opus`, `sodium-native`); stage 2 ships only the runtime deps.
+- Runtime image installs **`python3`** (yt-dlp's interpreter on Linux) and
+  **`deno`** (yt-dlp's JS runtime for YouTube signature decryption).
+- Fly memory bumped 256 → 512 MB to give ffmpeg/opus headroom.
+
+**New OAuth scope:**
+- The bot's invite URL now needs **`applications.commands`** (in addition to
+  `bot`). If you only have `bot`, slash commands silently fail to register —
+  re-invite the bot with both scopes ticked.
 
 ## What changed vs V8.2
 
@@ -13,18 +55,21 @@ Same bot as `V8.2`, repackaged for hosting **and** broken into modules so
 - Adds `Dockerfile`, `fly.toml`, `.gitignore`, `.dockerignore`, `.env.example`,
   and an `npm start` script.
 
-**Code layout (new in V8.3):**
+**Code layout (V9):**
 - `bot.js` — entry point: loads modules, wires events, starts intervals, logs in
 - `src/config.js` — config loading, paths, env-var token, `persistConfig()`
 - `src/state.js` — in-memory state (`roleMap`, `autoManaged`, `promotedRoles`,
-  `originalPositions`) + `saveData()` / load from `roles.json`
+  `originalPositions`, `guildVolumes`) + `saveData()` / load from `roles.json`
 - `src/client.js` — single shared `Client` instance with the right intents
 - `src/util.js` — pure helpers (`sleep`, `stripTimerPrefix`, name resolution)
 - `src/monitoring.js` — `sendMonitoring()` for the monitoring channel
 - `src/timers.js` — role-timer logic (`[Nm]` prefix updates, throttling)
 - `src/promotion.js` — VIP role promotion / demotion
-- `src/presence.js` — `handlePresence()` (the big one — game → role mapping)
-- `src/cleanup.js` — `!cleanup` command + `!premade` resync logic
+- `src/presence.js` — `handlePresence()` (game → role mapping)
+- `src/cleanup.js` — `cleanup` and `premade` resync logic
+- `src/music.js` — music player init, queue commands, reaction picker
+- `src/commands.js` — central command registry, slash registration, ctx abstraction,
+  VIP/owner gates
 - `src/events.js` — all `client.on(...)` registrations
 
 To add a new feature, drop a module in `src/` and require it from `bot.js` or
@@ -140,6 +185,26 @@ npm start
 
 `roles.json` will be written next to `bot.js` when running locally (because
 `DATA_DIR` is unset).
+
+## Music commands
+
+All music commands require the role in `config.vipRoleId`. Each works as both
+`/cmd` and `!cmd`.
+
+| Command | Aliases | What it does |
+|---|---|---|
+| `play <url-or-search>` | `p` | Joins your VC and queues a track. URLs play directly; text searches with multiple matches show a 3-option reaction picker. |
+| `skip` | `s` | Skip current track. |
+| `pause` / `resume` | — | Pause / resume current track. |
+| `stop` | `leave` | Stop playback, clear the queue, leave VC. |
+| `queue` | `q` | List the upcoming queue (first 10). |
+| `nowplaying` | `np` | Current track + progress bar. |
+| `volume [0-200]` | `vol` | Set or show volume; saves as the server default. |
+| `help` | `h` | Public usage cheatsheet (no VIP gate). |
+
+Spotify links work by reading title/artist via Spotify's metadata API and
+playing the YouTube equivalent — Spotify doesn't allow third-party streaming.
+The bot auto-leaves after 60 seconds of empty queue or empty voice channel.
 
 ## VIP role behavior
 
