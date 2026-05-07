@@ -16,6 +16,69 @@ function ensureGuildBuckets(guildId) {
   if (!voiceChannelRoles[guildId]) voiceChannelRoles[guildId] = {};
 }
 
+function getHighestActivityRolePosition(guild, channel) {
+  const guildId = guild.id;
+  const trackedRoleIds = new Set(Object.values(roleMap[guildId] || {}));
+  const voiceRoleIds = new Set(Object.values(voiceChannelRoles[guildId] || {}));
+  let maxPosition = null;
+  for (const member of channel.members.values()) {
+    if (member.user.bot) continue;
+    for (const memberRole of member.roles.cache.values()) {
+      if (voiceRoleIds.has(memberRole.id)) continue;
+      if (!trackedRoleIds.has(memberRole.id)) continue;
+      if (maxPosition === null || memberRole.position > maxPosition) {
+        maxPosition = memberRole.position;
+      }
+    }
+  }
+  return maxPosition;
+}
+
+function defaultVoiceRolePosition(guild) {
+  const botMember = guild.members.me;
+  if (!botMember) return 1;
+  const promotedCount = (promotedRoles[guild.id] || []).length;
+  return Math.max(botMember.roles.highest.position - 1 - promotedCount, 0);
+}
+
+async function updateVoiceRolePosition(guild, channel) {
+  if (!channel) return;
+  ensureGuildBuckets(guild.id);
+  const roleId = voiceChannelRoles[guild.id][channel.id];
+  if (!roleId) return;
+  if (promotedRoles[guild.id]?.includes(roleId)) return;
+  const role = guild.roles.cache.get(roleId);
+  if (!role) return;
+
+  const activityMax = getHighestActivityRolePosition(guild, channel);
+  const targetPos = activityMax !== null
+    ? Math.max(activityMax - 1, 0)
+    : defaultVoiceRolePosition(guild);
+
+  if (role.position === targetPos) return;
+
+  if (config.dryRun) {
+    console.log(`[DRY RUN] Would move voice role "${role.name}" to position ${targetPos}`);
+    return;
+  }
+
+  try {
+    await role.setPosition(targetPos);
+    console.log(`→ Moved voice role "${role.name}" to position ${targetPos} (activity-aware)`);
+  } catch (err) {
+    console.warn(`Could not move voice role "${role.name}":`, err.message);
+  }
+}
+
+async function updateVoiceRolePositionForMember(member) {
+  if (!member) return;
+  const channelId = member.voice?.channelId;
+  if (!channelId) return;
+  const channel = member.voice.channel || member.guild.channels.cache.get(channelId);
+  if (!isVoiceChannel(channel)) return;
+  await updateVoiceRolePosition(member.guild, channel);
+}
+
 function untrackVoiceRole(guildId, channelId) {
   const map = voiceChannelRoles[guildId];
   if (!map) return;
@@ -85,18 +148,11 @@ async function ensureVoiceRoleForChannel(guild, channel) {
     console.log(`Created voice role "${desiredName}"`);
     await sendMonitoring(`➕ **Voice role created** – \`${role.name}\` (${role.id}) in **${guild.name}** for channel \`${channel.name}\``);
 
-    const promotedCount = (promotedRoles[guild.id] || []).length;
-    const targetPos = Math.max(botMember.roles.highest.position - 1 - promotedCount, 0);
-    try {
-      await role.setPosition(targetPos);
-    } catch (e) {
-      console.warn(`Could not move voice role "${desiredName}":`, e.message);
-    }
-
     voiceChannelRoles[guild.id][channel.id] = role.id;
     roleMap[guild.id][desiredName] = role.id;
     autoManaged[guild.id].add(desiredName);
     saveData();
+    await updateVoiceRolePosition(guild, channel);
     return role;
   } catch (err) {
     console.error(`Failed to create voice role "${desiredName}":`, err.message);
@@ -121,6 +177,7 @@ async function addVoiceRole(member, channel) {
     await member.roles.add(role, `Joined voice channel "${channel.name}"`);
     console.log(`+ ${member.user.tag} → ${role.name} (voice)`);
     await sendMonitoring(`➕ **Voice role added** – \`${role.name}\` assigned to ${member.user.tag} (${member.id}) for joining \`${channel.name}\``);
+    await updateVoiceRolePosition(guild, channel);
   } catch (err) {
     console.error(`Failed to add voice role to ${member.user.tag}:`, err.message);
     await sendMonitoring(`❌ Failed to add voice role \`${role.name}\` to ${member.user.tag}: ${err.message}`);
@@ -152,6 +209,11 @@ async function removeVoiceRoleForChannel(guild, member, channelId, channelLabel)
         await sendMonitoring(`❌ Failed to remove voice role \`${role.name}\` from ${member.user.tag}: ${err.message}`);
       }
     }
+  }
+
+  const channel = guild.channels.cache.get(channelId);
+  if (isVoiceChannel(channel)) {
+    await updateVoiceRolePosition(guild, channel);
   }
 
   await maybeDeleteEmptyVoiceRole(guild, channelId);
@@ -317,4 +379,6 @@ module.exports = {
   handleVoiceChannelDelete,
   isVoiceChannel,
   pruneVoiceRoleId,
+  updateVoiceRolePosition,
+  updateVoiceRolePositionForMember,
 };

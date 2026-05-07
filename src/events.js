@@ -16,6 +16,7 @@ const {
   handleVoiceChannelDelete,
   isVoiceChannel,
   pruneVoiceRoleId,
+  updateVoiceRolePositionForMember,
 } = require("./voice");
 
 function register() {
@@ -110,6 +111,9 @@ function register() {
 
   client.on("presenceUpdate", async (oldPresence, newPresence) => {
     await handlePresence(newPresence);
+    if (newPresence?.member) {
+      await updateVoiceRolePositionForMember(newPresence.member);
+    }
   });
 
   client.on("voiceStateUpdate", async (oldState, newState) => {
