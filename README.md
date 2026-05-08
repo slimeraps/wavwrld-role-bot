@@ -1,9 +1,19 @@
-# Discord Game Role Bot — V9.3 (voice roles, member panel, stats)
+# Discord Game Role Bot — V9.4 (voice role polish)
 
-V9.3 keeps everything from V9 (presence-based role automation, music module,
-slash commands, VIP bypass, cleanup/premade) and adds voice-channel-based
-roles, a token-gated member status web panel, and a daily/weekly activity
-leaderboard.
+V9.4 keeps everything from V9.3 (voice roles, member panel, stats, music) and
+polishes the voice-role lifecycle: voice roles are now pink by default and
+`!cleanup` re-applies roles in place instead of restarting the process.
+
+## What changed vs V9.3
+
+**Voice role color:**
+- All voice roles are now created with color `#ffa6c9` (pink). Existing voice
+  roles are re-colored on the next ensure pass — no manual cleanup needed.
+
+**Cleanup no longer restarts:**
+- `!cleanup` used to wipe roles and `process.exit(0)` to force a fresh
+  re-apply on boot. It now calls `resyncAllMembers()` inline and posts a
+  second confirmation when re-application finishes. The bot stays up.
 
 ## What changed vs V9
 
@@ -60,9 +70,9 @@ leaderboard.
   `statsResetTimes`. The `roles.json` schema gained matching fields.
 - `src/util.js` adds `voiceRoleNameForChannel(channelName)` for the sanitizer.
 
-**Known issue (V9.3):** music playback has intermittent failures and is being
-patched. The commands and slash registration still work; expect bugs until
-the next deploy.
+**Known issue (carried from V9.3):** music playback has intermittent failures
+and is being patched. The commands and slash registration still work; expect
+bugs until the next deploy.
 
 ## What changed vs V8.4 (V9 baseline)
 
@@ -110,7 +120,7 @@ the next deploy.
 - Adds `Dockerfile`, `fly.toml`, `.gitignore`, `.dockerignore`, `.env.example`,
   and an `npm start` script.
 
-## Code layout (V9.3)
+## Code layout (V9.4)
 
 - `bot.js` — entry point: loads modules, wires events, starts the panel,
   starts intervals, logs in
@@ -309,7 +319,7 @@ Auth comparison is constant-time. A missing or wrong key returns `401`.
 
 ## Music commands
 
-> **Status:** music playback has known issues in V9.3 and is being patched.
+> **Status:** music playback still has the V9.3 intermittent-failure issue.
 > Commands register correctly; expect intermittent runtime failures until the
 > next deploy.
 
@@ -340,8 +350,8 @@ to the fallback role. Members without the VIP role are unaffected. Leaving
 `vipRoleId` blank disables the bypass entirely.
 
 VIP-promoted activity roles are also exempt from the voice-role
-repositioning logic in V9.3 — once promoted, their slot is held until they
-are demoted.
+repositioning logic — once promoted, their slot is held until they are
+demoted.
 
 ## Privileged Gateway Intents
 
@@ -354,5 +364,5 @@ application → Bot → **Privileged Gateway Intents**:
 
 The bot needs all three to function (member fetching, presence-based role
 assignment, and `!cleanup` / `!premade` text commands). The
-`GuildVoiceStates` intent (V9 / V9.3) is non-privileged but required for
-voice channel role tracking.
+`GuildVoiceStates` intent is non-privileged but required for voice channel
+role tracking.
