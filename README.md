@@ -1,11 +1,11 @@
-# WAV Bot — V9.4 (Music Integration)
+# WAV Bot — 9.4 (Music Integration)
 
-V9.4 keeps everything from V9.3 (voice roles, member panel, stats) and lands
-the music module as a fully working feature: the V9.3 intermittent playback
+9.4 keeps everything from 9.3 (voice roles, member panel, stats) and lands
+the music module as a fully working feature: the 9.3 intermittent playback
 failures are gone, and `!cleanup` no longer restarts the process so it
 doesn't kick the music player.
 
-## What changed vs V9.3
+## 9.4 changelog
 
 **Music works:**
 - YouTube URLs, Spotify URLs (resolved via metadata → YouTube), and free-text
@@ -17,7 +17,7 @@ doesn't kick the music player.
   second confirmation when re-application finishes. The bot stays up — handy
   when music is playing.
 
-## What changed vs V9.2
+## 9.3 changelog
 
 **Voice channel roles:**
 - While a member is in any voice channel they get a hoisted role named
@@ -72,14 +72,14 @@ doesn't kick the music player.
   `statsResetTimes`. The `roles.json` schema gained matching fields.
 - `src/util.js` adds `voiceRoleNameForChannel(channelName)` for the sanitizer.
 
-## What changed in V9.1 / V9.2
+## 9.1 / 9.2 changelog
 
 Bug-fix-only releases — no new features. Patched issues with role
 assignment, monitoring/log output, and the music player failing to queue
-songs reliably. The music module shipped in V9 but didn't fully stabilize
-until V9.4.
+songs reliably. The music module shipped in 9.0 but didn't fully stabilize
+until 9.4.
 
-## What changed vs V8.4 (V9 baseline)
+## 9.0 changelog (vs 8.4 baseline)
 
 **New features:**
 - **Slash + text parity** — every command works as both `/cmd` and `!cmd`.
@@ -101,7 +101,7 @@ until V9.4.
   only have `bot`, slash commands silently fail to register — re-invite with
   both scopes ticked.
 
-## Code layout (V9.4)
+## Code layout (9.4)
 
 - `bot.js` — entry point: loads modules, wires events, starts the panel,
   starts intervals, logs in
