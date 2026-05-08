@@ -17,7 +17,7 @@ doesn't kick the music player.
   second confirmation when re-application finishes. The bot stays up — handy
   when music is playing.
 
-## What changed vs V9
+## What changed vs V9.2
 
 **Voice channel roles:**
 - While a member is in any voice channel they get a hoisted role named
@@ -72,20 +72,16 @@ doesn't kick the music player.
   `statsResetTimes`. The `roles.json` schema gained matching fields.
 - `src/util.js` adds `voiceRoleNameForChannel(channelName)` for the sanitizer.
 
+## What changed in V9.1 / V9.2
+
+Bug-fix-only releases — no new features. Patched issues with role
+assignment, monitoring/log output, and the music player failing to queue
+songs reliably. The music module shipped in V9 but didn't fully stabilize
+until V9.4.
+
 ## What changed vs V8.4 (V9 baseline)
 
 **New features:**
-- **Music module** — `/play`, `/pause`, `/resume`, `/skip`, `/stop`, `/queue`,
-  `/nowplaying`, `/volume`, `/help`. Plays YouTube URLs, Spotify URLs (resolved
-  via metadata → YouTube), and free-text searches.
-- **Reaction-based picker** — text searches that return multiple matches post
-  an embed with the top 3 results as 1️⃣/2️⃣/3️⃣ reactions; only the user who
-  ran the command can pick. 30 s timeout, ❌ to cancel.
-- **Persistent per-guild volume** — saved to `roles.json`, applies to future
-  `/play` calls so the bot doesn't blast at default volume after a restart.
-- **VIP-gated** — every music command requires the role in `config.vipRoleId`.
-  `cleanup` / `premade` remain owner-only. The new `stats` command is
-  **un-gated** by design.
 - **Slash + text parity** — every command works as both `/cmd` and `!cmd`.
   The bot registers slash specs per-guild on `ready`, so changes propagate
   instantly without waiting for global propagation.
@@ -99,24 +95,11 @@ doesn't kick the music player.
 - Runtime image installs `python3` (yt-dlp's interpreter on Linux) and `deno`
   (yt-dlp's JS runtime for YouTube signature decryption).
 - Fly memory bumped 256 → 512 MB to give ffmpeg/opus headroom.
-- V9.3: Fly now runs the bot as an `[http_service]` (panel) in addition to the
-  worker. `auto_stop_machines = false` and `min_machines_running = 1` keep the
-  Discord gateway connection alive.
 
 **New OAuth scope:**
 - Invite URL needs **`applications.commands`** in addition to `bot`. If you
   only have `bot`, slash commands silently fail to register — re-invite with
   both scopes ticked.
-
-## What changed vs V8.2
-
-**Hosting changes:**
-- Token comes from the `DISCORD_TOKEN` environment variable, not `config.json`.
-- `roles.json` and the `!premade`-toggled config copy live under `$DATA_DIR`
-  (defaults to the project folder locally, `/data` in Docker/Fly) so a host's
-  persistent volume can survive redeploys/restarts.
-- Adds `Dockerfile`, `fly.toml`, `.gitignore`, `.dockerignore`, `.env.example`,
-  and an `npm start` script.
 
 ## Code layout (V9.4)
 
