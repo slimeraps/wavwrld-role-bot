@@ -86,7 +86,7 @@ and the queue works correctly, but actual audio playback still fails — the
 player connects, accepts tracks, and shows the queue, just doesn't push
 audio. Playback is what 9.4 finally fixes.
 
-## 9.0 changelog (vs 8.4 baseline)
+## 9.0 changelog
 
 **New features:**
 - **Music module** — adds `/play`, `/pause`, `/resume`, `/skip`, `/stop`,
@@ -96,6 +96,8 @@ audio. Playback is what 9.4 finally fixes.
 - **Slash + text parity** — every command works as both `/cmd` and `!cmd`.
   The bot registers slash specs per-guild on `ready`, so changes propagate
   instantly without waiting for global propagation.
+
+## 8.4 changelog (initial VM upload)
 
 **Hosting / Docker changes:**
 - Base image is **`node:22-bookworm-slim`** (Node 20 lacks
