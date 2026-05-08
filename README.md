@@ -70,16 +70,16 @@ polishes the voice-role lifecycle: voice roles are now pink by default and
   `statsResetTimes`. The `roles.json` schema gained matching fields.
 - `src/util.js` adds `voiceRoleNameForChannel(channelName)` for the sanitizer.
 
-**Known issue (carried from V9.3):** music playback has intermittent failures
-and is being patched. The commands and slash registration still work; expect
-bugs until the next deploy.
+**Music status:** the V9.3 intermittent playback failures are fixed in V9.4.
+SoundCloud URLs are no longer supported — the player handles YouTube URLs,
+Spotify URLs (resolved via metadata → YouTube), and free-text searches.
 
 ## What changed vs V8.4 (V9 baseline)
 
 **New features:**
 - **Music module** — `/play`, `/pause`, `/resume`, `/skip`, `/stop`, `/queue`,
   `/nowplaying`, `/volume`, `/help`. Plays YouTube URLs, Spotify URLs (resolved
-  via metadata → YouTube), SoundCloud URLs, and free-text searches.
+  via metadata → YouTube), and free-text searches.
 - **Reaction-based picker** — text searches that return multiple matches post
   an embed with the top 3 results as 1️⃣/2️⃣/3️⃣ reactions; only the user who
   ran the command can pick. 30 s timeout, ❌ to cancel.
@@ -318,10 +318,6 @@ Set `PANEL_TOKEN` to a long random string (and optionally `PANEL_PORT`,
 Auth comparison is constant-time. A missing or wrong key returns `401`.
 
 ## Music commands
-
-> **Status:** music playback still has the V9.3 intermittent-failure issue.
-> Commands register correctly; expect intermittent runtime failures until the
-> next deploy.
 
 All music commands require the role in `config.vipRoleId`. Each works as both
 `/cmd` and `!cmd`.
