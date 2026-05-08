@@ -79,7 +79,7 @@ assignment, monitoring/log output, and the music player failing to queue
 songs reliably. The music module shipped in 9.0 but didn't fully stabilize
 until 9.4.
 
-## 9.0 changelog (vs 8.4 baseline)
+## 8.4 Changelog (Initial VM upload)
 
 **New features:**
 - **Slash + text parity** — every command works as both `/cmd` and `!cmd`.
