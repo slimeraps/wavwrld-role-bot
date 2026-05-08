@@ -71,17 +71,28 @@ doesn't kick the music player.
 - `src/state.js` exports new buckets: `voiceChannelRoles`, `activityStats`,
   `statsResetTimes`. The `roles.json` schema gained matching fields.
 - `src/util.js` adds `voiceRoleNameForChannel(channelName)` for the sanitizer.
+- The bot was now fully functional locally — but still wouldn't run reliably
+  on the virtual machine. That last gap is what 9.4 closes.
 
-## 9.1 / 9.2 changelog
+## 9.2 changelog
 
-Bug-fix-only releases — no new features. Patched issues with role
-assignment, monitoring/log output, and the music player failing to queue
-songs reliably. The music module shipped in 9.0 but didn't fully stabilize
-until 9.4.
+Bug-fix-only release — no new features. Patched issues with role assignment
+and monitoring/log output.
 
-## 8.4 Changelog (Initial VM upload)
+## 9.1 changelog
+
+Music progress, no new commands. The bot now joins voice channels on `/play`
+and the queue works correctly, but actual audio playback still fails — the
+player connects, accepts tracks, and shows the queue, just doesn't push
+audio. Playback is what 9.4 finally fixes.
+
+## 9.0 changelog (vs 8.4 baseline)
 
 **New features:**
+- **Music module** — adds `/play`, `/pause`, `/resume`, `/skip`, `/stop`,
+  `/queue`, `/nowplaying`, `/volume`, `/help`. In 9.0 the commands register
+  and the queue accepts tracks, but the bot doesn't join voice channels yet
+  — VC joining lands in 9.1, working playback in 9.4.
 - **Slash + text parity** — every command works as both `/cmd` and `!cmd`.
   The bot registers slash specs per-guild on `ready`, so changes propagate
   instantly without waiting for global propagation.
