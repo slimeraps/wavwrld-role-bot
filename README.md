@@ -17,6 +17,20 @@ doesn't kick the music player.
   second confirmation when re-application finishes. The bot stays up — handy
   when music is playing.
 
+**Activity stats / leaderboard:**
+- New `/stats` (aliases `/leaderboard`, `/lb`) with optional
+  `period: daily|weekly` (default `weekly`).
+- Increments a per-guild counter every time the bot adds a presence-driven
+  game role; persisted in `roles.json` under `activityStats` /
+  `statsResetTimes`.
+- Rolling 24-hour and 7-day windows — each counter resets on the first event
+  after its window expires (not calendar-aligned).
+- Anyone can run it in any channel — no VIP/owner gate, no channel filter.
+- Output is a polished embed: top 3 get medals + progress bars; positions 4–10
+  get a compact line. Three-column summary (Champion / Tracked / Resets) with
+  a Discord relative timestamp for the next reset. Daily and weekly views use
+  distinct accent colors; the guild icon is used as the thumbnail.
+
 ## 9.3 changelog
 
 **Voice channel roles:**
@@ -49,20 +63,6 @@ doesn't kick the music player.
 - Disabled when `PANEL_TOKEN` is not set — set the secret to enable.
 - Env vars: `PANEL_TOKEN` (required), `PANEL_PORT` (default `8080`),
   `PANEL_GUILD_ID` (optional; falls back to the first guild the bot is in).
-
-**Activity stats / leaderboard:**
-- New `/stats` (aliases `/leaderboard`, `/lb`) with optional
-  `period: daily|weekly` (default `weekly`).
-- Increments a per-guild counter every time the bot adds a presence-driven
-  game role; persisted in `roles.json` under `activityStats` /
-  `statsResetTimes`.
-- Rolling 24-hour and 7-day windows — each counter resets on the first event
-  after its window expires (not calendar-aligned).
-- Anyone can run it in any channel — no VIP/owner gate, no channel filter.
-- Output is a polished embed: top 3 get medals + progress bars; positions 4–10
-  get a compact line. Three-column summary (Champion / Tracked / Resets) with
-  a Discord relative timestamp for the next reset. Daily and weekly views use
-  distinct accent colors; the guild icon is used as the thumbnail.
 
 **Other changes:**
 - `bot.js` calls `startPanel(client)` on boot.
