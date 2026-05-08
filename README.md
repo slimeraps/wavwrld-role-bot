@@ -1,19 +1,21 @@
-# Discord Game Role Bot — V9.4 (voice role polish)
+# WAV Bot — V9.4 (Music Integration)
 
-V9.4 keeps everything from V9.3 (voice roles, member panel, stats, music) and
-polishes the voice-role lifecycle: voice roles are now pink by default and
-`!cleanup` re-applies roles in place instead of restarting the process.
+V9.4 keeps everything from V9.3 (voice roles, member panel, stats) and lands
+the music module as a fully working feature: the V9.3 intermittent playback
+failures are gone, and `!cleanup` no longer restarts the process so it
+doesn't kick the music player.
 
 ## What changed vs V9.3
 
-**Voice role color:**
-- All voice roles are now created with color `#ffa6c9` (pink). Existing voice
-  roles are re-colored on the next ensure pass — no manual cleanup needed.
+**Music works:**
+- YouTube URLs, Spotify URLs (resolved via metadata → YouTube), and free-text
+  searches all play reliably. SoundCloud URLs are no longer supported.
 
 **Cleanup no longer restarts:**
 - `!cleanup` used to wipe roles and `process.exit(0)` to force a fresh
   re-apply on boot. It now calls `resyncAllMembers()` inline and posts a
-  second confirmation when re-application finishes. The bot stays up.
+  second confirmation when re-application finishes. The bot stays up — handy
+  when music is playing.
 
 ## What changed vs V9
 
@@ -69,10 +71,6 @@ polishes the voice-role lifecycle: voice roles are now pink by default and
 - `src/state.js` exports new buckets: `voiceChannelRoles`, `activityStats`,
   `statsResetTimes`. The `roles.json` schema gained matching fields.
 - `src/util.js` adds `voiceRoleNameForChannel(channelName)` for the sanitizer.
-
-**Music status:** the V9.3 intermittent playback failures are fixed in V9.4.
-SoundCloud URLs are no longer supported — the player handles YouTube URLs,
-Spotify URLs (resolved via metadata → YouTube), and free-text searches.
 
 ## What changed vs V8.4 (V9 baseline)
 
