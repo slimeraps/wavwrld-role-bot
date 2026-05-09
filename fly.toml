@@ -17,9 +17,17 @@ primary_region = "ord"
   size = "shared-cpu-1x"
   memory = "512mb"
 
-# Discord bots are persistent workers — no HTTP service, just keep the process alive.
 [processes]
   app = "node bot.js"
+
+# Web panel runs inside the bot process on PANEL_PORT (default 8080).
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
 
 # Always restart the machine when the process exits — the cleanup command exits the
 # process intentionally and we want fly to bring it back up rather than leave it stopped.
