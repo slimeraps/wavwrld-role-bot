@@ -247,12 +247,7 @@ audio. Playback is what 9.4 finally fixes.
   (yt-dlp's JS runtime for YouTube signature decryption).
 - Fly memory bumped 256 → 512 MB to give ffmpeg/opus headroom.
 
-**New OAuth scope:**
-- Invite URL needs **`applications.commands`** in addition to `bot`. If you
-  only have `bot`, slash commands silently fail to register — re-invite with
-  both scopes ticked.
-
-## Code layout (9.4)
+## Code layout (8.4)
 
 - `bot.js` — entry point: loads modules, wires events, starts the panel,
   starts intervals, logs in
@@ -279,51 +274,6 @@ audio. Playback is what 9.4 finally fixes.
   abstraction, VIP/owner gates
 - `src/events.js` — all `client.on(...)` registrations
 
-To add a new feature, drop a module in `src/` and require it from `bot.js` or
-`events.js`. Existing modules don't need to change unless the feature
-genuinely overlaps with them.
-
-## Stats / leaderboard
-
-Anyone, any channel. Works as `/stats`, `!stats`, `/leaderboard`, `/lb`, etc.
-
-| Command | Aliases | What it does |
-|---|---|---|
-| `stats [period]` | `leaderboard`, `lb` | Top 10 most-played games. `period` is `daily` or `weekly` (default weekly). |
-
-Counts increment every time the bot **adds** a game role to a member. Sessions
-roll over on a 24 h / 7 d sliding window per period. Empty periods render an
-empty-state embed showing when the next reset fires.
-
-## Voice channel roles
-
-Automatic. While a member is connected to any voice channel they hold a
-hoisted role named `In <channel name>`. Roles are created on demand and
-auto-deleted when the channel empties (subject to `autoDeleteUnusedRoles`).
-Channel renames propagate to the role name.
-
-When other members in the same voice channel have tracked activity roles, the
-voice role is placed one slot below the highest such role so activity
-grouping takes precedence in the member list. The position recomputes on
-voice join/leave and on activity changes. Voice roles that have been
-VIP-promoted are not repositioned.
-
-This feature is independent of `onlyUsePremadeRoles` — voice roles are
-always created on demand.
-
-## Member status panel
-
-Set `PANEL_TOKEN` to a long random string (and optionally `PANEL_PORT`,
-`PANEL_GUILD_ID`) to enable the HTTP panel. Leave it unset to disable.
-
-- `GET /?key=<token>` — Discord-styled HTML page that polls and renders the
-  online member list with status, activities, voice channels, and hoisted /
-  top-role colors.
-- `GET /api/members?key=<token>` — JSON snapshot used by the page (handy for
-  scripting).
-- `GET /healthz` — token-gated `ok` for uptime checks.
-
-Auth comparison is constant-time. A missing or wrong key returns `401`.
 
 ## Music commands
 
@@ -344,29 +294,3 @@ All music commands require the role in `config.vipRoleId`. Each works as both
 Spotify links work by reading title/artist via Spotify's metadata API and
 playing the YouTube equivalent — Spotify doesn't allow third-party streaming.
 The bot auto-leaves after 60 seconds of empty queue or empty voice channel.
-
-## VIP role behavior
-
-`config.vipRoleId` (when set) marks a role as VIP. Any member who holds that
-role bypasses `config.onlyUsePremadeRoles` — even if the flag is on, the bot
-will auto-create roles for their unmatched activities instead of falling back
-to the fallback role. Members without the VIP role are unaffected. Leaving
-`vipRoleId` blank disables the bypass entirely.
-
-VIP-promoted activity roles are also exempt from the voice-role
-repositioning logic — once promoted, their slot is held until they are
-demoted.
-
-## Privileged Gateway Intents
-
-Don't forget to enable these in the Discord Developer Portal under your
-application → Bot → **Privileged Gateway Intents**:
-
-- Server Members Intent
-- Presence Intent
-- Message Content Intent
-
-The bot needs all three to function (member fetching, presence-based role
-assignment, and `!cleanup` / `!premade` text commands). The
-`GuildVoiceStates` intent is non-privileged but required for voice channel
-role tracking.
