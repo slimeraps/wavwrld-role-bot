@@ -1,9 +1,35 @@
-# WAV Bot — 9.5.3 (Member-Centric Stats)
+# WAV Bot — 9.5.4 (Stats as Images)
 
-9.5.3 reshapes `/stats` around members instead of channels/games. Default
-`/stats` is now a top-members leaderboard for the last 30 days, `/stats voice`
-is a lifetime VC leaderboard, and `/stats games` keeps the per-game view
-with a new `lifetime` period option.
+9.5.4 renders all three `/stats` views as PNG attachments instead of
+embeds. Each command keeps its existing arguments (`/stats`, `/stats voice`,
+`/stats games [period]`) — only the output changes.
+
+## 9.5.4 changelog
+
+**Image-based `/stats` output:**
+- New `src/stats-image.js` renders dashboard-style PNGs via
+  `@napi-rs/canvas` (prebuilt Skia, no native compile). Each command gets
+  its own layout: a header bar with accent stripe, a 2-up summary row
+  (big-number lookback + tri-stat 1d/7d/30d), and a top-10 list panel
+  with rank · name · sub-blurb · value.
+- `runtime` Docker stage installs `fonts-dejavu-core` and
+  `fonts-noto-color-emoji` so text and emoji glyphs render on the
+  bookworm-slim base.
+- `statsCmd` defers the reply (slash 3s timeout safety) before
+  rendering, then sends an `AttachmentBuilder` PNG with
+  `allowedMentions: { parse: [] }`.
+
+**Display-name resolution:**
+- Per-user rows use `member.displayName` from the local guild cache. If
+  a member has left, the renderer falls back to `user <last 4 of id>`
+  rather than dropping them from the list.
+
+**Tradeoffs vs the old embeds:**
+- Image text isn't selectable. If you need to copy a player name, fall
+  back to running the equivalent text command.
+- `<t:…:R>` Discord relative timestamps don't render inside an image,
+  so reset times are baked in as `resets in 2d 12h` at render time
+  (recomputed every call).
 
 ## 9.5.3 changelog
 
