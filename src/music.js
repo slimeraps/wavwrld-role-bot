@@ -169,7 +169,12 @@ async function playCmd(ctx, { query }) {
       return;
     }
 
-    const searchResult = await player.search(query, { requestedBy: ctx.author });
+    // Without an explicit engine, AUTO would have fallen through to SoundCloud
+    // for free text. SoundCloud is gone, so route searches to YouTube directly.
+    const searchResult = await player.search(query, {
+      requestedBy: ctx.author,
+      searchEngine: "youtubeSearch",
+    });
     const tracks = searchResult?.tracks || [];
     if (tracks.length === 0) {
       return ctx.reply(`❌ No results for \`${query}\`.`);
