@@ -1,4 +1,4 @@
-const { createCanvas, GlobalFonts } = require("@napi-rs/canvas");
+const { createCanvas, GlobalFonts, loadImage } = require("@napi-rs/canvas");
 
 // Try to register a system font as "UI" so the rest of the file can use one name.
 // On Debian-slim we install fonts-dejavu-core; @napi-rs/canvas reads system font dirs.
@@ -24,7 +24,6 @@ const PALETTE = {
   gold: "#e5b25d",
   silver: "#b3b9c5",
   bronze: "#c47e58",
-  purple: "#9b59b6",
   voice: "#43a25a",
 };
 
@@ -32,6 +31,28 @@ const PADDING = 20;
 const GAP = 12;
 const WIDTH = 720;
 const RADIUS = 8;
+const ICON_SIZE = 18;
+
+// In-memory icon cache keyed by Discord role.icon hash. Hashes change when an
+// admin uploads a new icon, so cached entries are valid until that happens.
+const iconCache = new Map();
+
+async function loadRoleIconCached(role) {
+  if (!role || !role.icon) return null;
+  const key = role.icon;
+  if (iconCache.has(key)) return iconCache.get(key);
+  const url = role.iconURL({ size: 64, extension: "png" });
+  if (!url) return null;
+  try {
+    const img = await loadImage(url);
+    iconCache.set(key, img);
+    return img;
+  } catch (err) {
+    console.warn(`[stats] could not load role icon for "${role.name}": ${err.message}`);
+    iconCache.set(key, null);
+    return null;
+  }
+}
 
 function fmtHours(min) {
   if (min <= 0) return "0h";
@@ -96,12 +117,9 @@ function rankLabel(i) {
   return { text: String(i + 1), color: PALETTE.dim };
 }
 
-// Layout primitives ────────────────────────────────────────────────────
-
 function drawHeader(ctx, x, y, w, title, subtitle, accent = PALETTE.accent) {
   const h = 60;
   drawPanel(ctx, x, y, w, h, PALETTE.panel);
-  // accent bar on the left
   ctx.fillStyle = accent;
   roundRect(ctx, x, y, 4, h, 2);
   ctx.fill();
@@ -128,53 +146,27 @@ function drawTriStat(ctx, x, y, w, h, title, items) {
   });
 }
 
-function drawListPanel(ctx, x, y, w, title, rows, opts = {}) {
-  const headerH = 44;
-  const rowH = 30;
-  const h = headerH + rowH * rows.length + 12;
-  drawPanel(ctx, x, y, w, h);
-  drawText(ctx, title.toUpperCase(), x + 14, y + 26, { size: 11, weight: "bold", color: PALETTE.muted });
-
-  const rankColW = 28;
-  const valueColW = opts.valueColW || 90;
-  const subColW = opts.subColW || 0;
-  const nameX = x + 14 + rankColW;
-  const valueX = x + w - 14;
-  const subX = subColW ? valueX - valueColW - 16 : null;
-  const nameMaxW = (subX || valueX - valueColW) - nameX - 12;
-
-  rows.forEach((row, i) => {
-    const ry = y + headerH + rowH * i + rowH / 2 + 4;
-    const rank = rankLabel(i);
-    drawText(ctx, rank.text, x + 14, ry, { size: 14, weight: "bold", color: rank.color });
-    const nameFont = `${row.bold === false ? "" : "bold "}14px ${row.bold === false ? "UI" : "UI Bold"}`;
-    const nameText = truncate(ctx, row.name, nameMaxW, nameFont);
-    drawText(ctx, nameText, nameX, ry, { size: 14, weight: row.bold === false ? "" : "bold", color: PALETTE.text });
-    if (subX && row.sub) {
-      drawText(ctx, row.sub, subX, ry, { size: 12, color: PALETTE.muted, align: "right" });
-    }
-    drawText(ctx, row.value, valueX, ry, { size: 14, weight: "bold", color: row.valueColor || PALETTE.text, align: "right" });
-  });
-
-  return h;
-}
-
 function fillBackground(ctx, w, h) {
   ctx.fillStyle = PALETTE.bg;
   ctx.fillRect(0, 0, w, h);
 }
 
-// Renderers ────────────────────────────────────────────────────────────
-
-// /stats default — top members, last 30 days
-function renderUsersDefault({ guildName, totals, members }) {
+// Top Members list with role icons next to each top game.
+async function renderUsersDefault({ guildName, totals, members, guild, roleByGameKey }) {
   const memberRows = members.slice(0, 10);
 
-  // Compute height up front.
+  // Resolve + load role icons in parallel before we start drawing.
+  const resolved = await Promise.all(memberRows.map(async (r) => {
+    if (!r.topGame) return { row: r, icon: null, role: null };
+    const role = roleByGameKey?.(r.topGame.key) || null;
+    const icon = await loadRoleIconCached(role);
+    return { row: r, icon, role };
+  }));
+
   const headerH = 60;
   const summaryH = 100;
   const listHeaderH = 44;
-  const rowH = 30;
+  const rowH = 32;
   const listH = listHeaderH + rowH * memberRows.length + 12;
   const height = PADDING * 2 + headerH + GAP + summaryH + GAP + listH;
 
@@ -186,7 +178,6 @@ function renderUsersDefault({ guildName, totals, members }) {
   drawHeader(ctx, PADDING, y, WIDTH - PADDING * 2, "Top Members — Last 30 Days", guildName, PALETTE.accent);
   y += headerH + GAP;
 
-  // Summary row: 2-up — server total + per-window
   const sumW = WIDTH - PADDING * 2;
   const leftW = Math.floor(sumW * 0.36);
   const rightW = sumW - leftW - GAP;
@@ -208,118 +199,68 @@ function renderUsersDefault({ guildName, totals, members }) {
   );
   y += summaryH + GAP;
 
-  drawListPanel(ctx, PADDING, y, sumW, "Top Members", memberRows.map((r) => ({
-    name: r.displayName,
-    value: fmtHours(r.voiceMinutes),
-    sub: r.topGame ? `🎮 ${r.topGame.key} ${fmtMinutesShort(r.topGame.minutes)}` : "no games",
-    valueColor: PALETTE.voice,
-  })), { valueColW: 100, subColW: 240 });
+  // List panel with role icons inline.
+  drawPanel(ctx, PADDING, y, sumW, listH);
+  drawText(ctx, "TOP MEMBERS", PADDING + 14, y + 26, { size: 11, weight: "bold", color: PALETTE.muted });
 
-  return canvas.toBuffer("image/png");
-}
+  const listX = PADDING;
+  const rankColW = 28;
+  const valueColX = PADDING + sumW - 14; // right edge for the hours value
+  const valueColW = 90;
+  const subRightX = valueColX - valueColW - 16;
+  const nameX = listX + 14 + rankColW;
 
-// /stats voice — lifetime users
-function renderVoiceLifetime({ guildName, totals, members }) {
-  const memberRows = members.slice(0, 10);
+  resolved.forEach(({ row, icon, role }, i) => {
+    const ry = y + listHeaderH + rowH * i + rowH / 2 + 4;
+    const rank = rankLabel(i);
+    drawText(ctx, rank.text, listX + 14, ry, { size: 14, weight: "bold", color: rank.color });
 
-  const headerH = 60;
-  const summaryH = 100;
-  const listHeaderH = 44;
-  const rowH = 30;
-  const listH = listHeaderH + rowH * memberRows.length + 12;
-  const height = PADDING * 2 + headerH + GAP + summaryH + GAP + listH;
+    // Member name (left)
+    const nameMaxW = 220;
+    const nameText = truncate(ctx, row.displayName, nameMaxW, "bold 14px UI Bold");
+    drawText(ctx, nameText, nameX, ry, { size: 14, weight: "bold" });
 
-  const canvas = createCanvas(WIDTH, height);
-  const ctx = canvas.getContext("2d");
-  fillBackground(ctx, WIDTH, height);
+    // Sub line: [icon] Game name (Xh Ym) — right-aligned at subRightX
+    let subX = subRightX;
+    if (row.topGame) {
+      const label = `${row.topGame.key} (${fmtMinutesShort(row.topGame.minutes)})`;
+      // Measure width to right-align the whole [icon + label] block.
+      ctx.font = "12px UI";
+      const labelW = ctx.measureText(label).width;
+      const totalW = labelW + (icon ? ICON_SIZE + 6 : 0);
+      const startX = subX - totalW;
 
-  let y = PADDING;
-  drawHeader(ctx, PADDING, y, WIDTH - PADDING * 2, "Top Voice Members — All Time", guildName, PALETTE.green);
-  y += headerH + GAP;
+      if (icon) {
+        // Round-clip the icon for a cleaner look.
+        ctx.save();
+        ctx.beginPath();
+        const iy = ry - ICON_SIZE / 2 - 5;
+        ctx.arc(startX + ICON_SIZE / 2, iy + ICON_SIZE / 2, ICON_SIZE / 2, 0, Math.PI * 2);
+        ctx.closePath();
+        ctx.clip();
+        ctx.drawImage(icon, startX, iy, ICON_SIZE, ICON_SIZE);
+        ctx.restore();
+      }
+      drawText(
+        ctx,
+        label,
+        startX + (icon ? ICON_SIZE + 6 : 0),
+        ry,
+        { size: 12, color: PALETTE.muted },
+      );
+    } else {
+      drawText(ctx, "no games", subX, ry, { size: 12, color: PALETTE.dim, align: "right" });
+    }
 
-  const sumW = WIDTH - PADDING * 2;
-  const leftW = Math.floor(sumW * 0.36);
-  const rightW = sumW - leftW - GAP;
-  drawBigStat(
-    ctx, PADDING, y, leftW, summaryH,
-    "Server Lookback",
-    fmtHours(totals.lifetime),
-    `${totals.memberCount} members tracked`,
-    PALETTE.green,
-  );
-  drawTriStat(
-    ctx, PADDING + leftW + GAP, y, rightW, summaryH,
-    "Voice Activity",
-    [
-      { label: "1d", value: fmtHours(totals.day), color: PALETTE.voice },
-      { label: "7d", value: fmtHours(totals.week), color: PALETTE.voice },
-      { label: "30d", value: fmtHours(totals.month), color: PALETTE.voice },
-    ],
-  );
-  y += summaryH + GAP;
-
-  drawListPanel(ctx, PADDING, y, sumW, "Top Voice Members", memberRows.map((r) => ({
-    name: r.displayName,
-    value: fmtHours(r.minutes),
-    sub: `${r.percent}% of total`,
-    valueColor: PALETTE.voice,
-  })), { valueColW: 100, subColW: 140 });
-
-  return canvas.toBuffer("image/png");
-}
-
-// /stats games — per-period game leaderboard
-function renderGames({ guildName, periodLabel, accent, totals, games, resetText }) {
-  const gameRows = games.slice(0, 10);
-
-  const headerH = 60;
-  const summaryH = 100;
-  const listHeaderH = 44;
-  const rowH = 30;
-  const listH = listHeaderH + rowH * gameRows.length + 12;
-  const height = PADDING * 2 + headerH + GAP + summaryH + GAP + listH;
-
-  const canvas = createCanvas(WIDTH, height);
-  const ctx = canvas.getContext("2d");
-  fillBackground(ctx, WIDTH, height);
-
-  let y = PADDING;
-  drawHeader(ctx, PADDING, y, WIDTH - PADDING * 2, `Most Played Games — ${periodLabel}`, guildName, accent);
-  y += headerH + GAP;
-
-  const sumW = WIDTH - PADDING * 2;
-  const leftW = Math.floor(sumW * 0.36);
-  const rightW = sumW - leftW - GAP;
-  drawBigStat(
-    ctx, PADDING, y, leftW, summaryH,
-    `Total — ${periodLabel}`,
-    fmtHours(totals.minutes),
-    `${totals.tracked} games · ${resetText || "—"}`,
-    accent,
-  );
-  drawTriStat(
-    ctx, PADDING + leftW + GAP, y, rightW, summaryH,
-    "Across All Windows",
-    [
-      { label: "1d", value: fmtHours(totals.day), color: accent },
-      { label: "7d", value: fmtHours(totals.week), color: accent },
-      { label: "all", value: fmtHours(totals.lifetime), color: accent },
-    ],
-  );
-  y += summaryH + GAP;
-
-  drawListPanel(ctx, PADDING, y, sumW, `Top Games — ${periodLabel}`, gameRows.map((g) => ({
-    name: g.key,
-    value: fmtHours(g.minutes),
-    sub: g.topUserName ? `top: ${g.topUserName} ${fmtMinutesShort(g.topUserMinutes)}` : "",
-    valueColor: accent,
-  })), { valueColW: 100, subColW: 220 });
+    // Voice hours (right)
+    drawText(ctx, fmtHours(row.voiceMinutes), valueColX, ry, {
+      size: 14, weight: "bold", color: PALETTE.voice, align: "right",
+    });
+  });
 
   return canvas.toBuffer("image/png");
 }
 
 module.exports = {
   renderUsersDefault,
-  renderVoiceLifetime,
-  renderGames,
 };

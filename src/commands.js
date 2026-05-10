@@ -99,43 +99,8 @@ const COMMANDS = [
   },
   {
     name: "stats",
-    description: "Top members (default), voice leaderboard, or game leaderboard",
+    description: "Top members in the last 30 days — voice + game time with top game played",
     aliases: ["leaderboard", "lb"],
-    options: [
-      {
-        name: "category",
-        type: ApplicationCommandOptionType.String,
-        required: false,
-        description: "users (default, last 30d), voice (lifetime), or games",
-        choices: [
-          { name: "users", value: "users" },
-          { name: "voice", value: "voice" },
-          { name: "games", value: "games" },
-        ],
-      },
-      {
-        name: "period",
-        type: ApplicationCommandOptionType.String,
-        required: false,
-        description: "Only used by 'games': daily, weekly (default), or lifetime",
-        choices: [
-          { name: "daily", value: "daily" },
-          { name: "weekly", value: "weekly" },
-          { name: "lifetime", value: "lifetime" },
-        ],
-      },
-    ],
-    parseText: (args) => {
-      // Accept either order: `!stats games daily` or `!stats daily games`.
-      const lower = args.map((a) => a.toLowerCase());
-      const category = lower.find((a) => a === "users" || a === "voice" || a === "games") || "users";
-      const period = lower.find((a) => a === "daily" || a === "weekly" || a === "lifetime") || "weekly";
-      return { category, period };
-    },
-    parseSlash: (i) => ({
-      category: i.options.getString("category") || "users",
-      period: i.options.getString("period") || "weekly",
-    }),
     handler: statsCmd,
   },
   {

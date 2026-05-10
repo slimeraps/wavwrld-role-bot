@@ -1,8 +1,38 @@
-# WAV Bot — 9.5.4 (Stats as Images)
+# WAV Bot — 9.5.6 (Single /stats with role icons)
 
-9.5.4 renders all three `/stats` views as PNG attachments instead of
-embeds. Each command keeps its existing arguments (`/stats`, `/stats voice`,
-`/stats games [period]`) — only the output changes.
+9.5.6 simplifies `/stats` to a single 30-day lookback (the voice and games
+sub-views are gone) and renders Discord role icons inline next to each
+member's top game.
+
+## 9.5.6 changelog
+
+**One command, one view:**
+- `/stats` (no args) is the only stats command now. Output is the same
+  30-day "Top Members" image — server lookback, 1d/7d/30d voice strip,
+  and the top-10 list with each member's top game.
+- The `category` and `period` options are removed. `/stats voice` and
+  `/stats games` no longer exist.
+
+**Role icons inline:**
+- Each member's top-game blurb now uses the **server-uploaded role icon**
+  for that game's role instead of the literal `🎮` glyph (which was
+  rendering as a missing-glyph box on some clients).
+- Icons resolved via `roleMap[guildId][gameName]` → `Role.iconURL()`,
+  cached in memory by `role.icon` hash so the same icon isn't refetched
+  on every render. Cache invalidates automatically when an admin uploads
+  a new icon (the hash changes).
+- Roles without an icon just render the game name without a prefix.
+
+## 9.5.5 changelog
+
+**Transient upload retry on /stats:**
+- Discord's edge sometimes drops the file-upload socket mid-flight
+  (`SocketError: other side closed` from undici). The first attempt
+  now retries via `interaction.followUp` (fresh connection), with a
+  final fallback to `channel.send`.
+- The catch block in `statsCmd` does the same for the error message
+  itself, so a wedged interaction doesn't swallow the user-facing
+  failure.
 
 ## 9.5.4 changelog
 
