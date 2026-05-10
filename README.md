@@ -7,6 +7,27 @@ variants. They were clutter and rarely used — only the default 30-day
 underlying machinery can be brought back if we ever want it, but no
 command is wired to them.
 
+## 9.6.2 changelog
+
+**Role timer cleanup:**
+- Empty tracked roles now restore their original names even if the timer
+  was not present in the in-memory timer table.
+- The timer interval now reconciles all tracked roles, so stale `[Nm]`
+  prefixes are cleaned up when a role has no human members.
+- Presence removal now counts remaining humans while excluding the member
+  being removed, avoiding Discord cache timing issues after the last
+  member leaves a role.
+- `!cleanup` now explicitly stops/restores premade role timers after
+  removing members in bulk.
+
+**Implementation notes:**
+- `src/timers.js` adds `humanMemberCount(...)` and
+  `reconcileRoleTimersForGuild(...)`.
+- `stopRoleTimer(...)` now falls back to `stripTimerPrefix(role.name)`
+  when no active timer record exists.
+- `src/presence.js` and `src/cleanup.js` call the timer restore path
+  directly for last-member and bulk-cleanup cases.
+
 ## 9.6.1 changelog
 
 **Role timers:**

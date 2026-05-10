@@ -12,6 +12,12 @@ let timersEnabled = false;
 let timerRenameQueue = Promise.resolve();
 let lastTimerRenameAt = 0;
 
+function humanMemberCount(role, excludeMemberId = null) {
+  return role.members.filter((member) => (
+    !member.user.bot && member.id !== excludeMemberId
+  )).size;
+}
+
 // Serialize timer-related role renames so two never fire within TIMER_RENAME_GAP_MS,
 // regardless of which code path triggered them.
 function throttleTimerRename() {
@@ -36,17 +42,17 @@ async function startRoleTimer(guild, role, originalName) {
 
   if (config.dryRun) {
     console.log(`[DRY RUN] Would start timer for role "${role.name}" -> "${newName}"`);
-    await sendMonitoring(`⏱️ [DRY RUN] Timer started for role \`${role.name}\` → \`${newName}\``);
+    await sendMonitoring(`[DRY RUN] Timer started for role \`${role.name}\` -> \`${newName}\``);
   } else {
     try {
       await throttleTimerRename();
       await role.setName(newName, "Timer started");
       timers[guildId][role.id].lastPrefixMinutes = elapsedMinutes;
       console.log(`Timer started for role "${originalName}"`);
-      await sendMonitoring(`⏱️ **Timer started** for role \`${originalName}\` – renamed to \`${newName}\``);
+      await sendMonitoring(`Timer started for role \`${originalName}\` - renamed to \`${newName}\``);
     } catch (err) {
       console.error(`Failed to start timer for role ${originalName}:`, err.message);
-      await sendMonitoring(`❌ Failed to start timer for role \`${originalName}\`: ${err.message}`);
+      await sendMonitoring(`Failed to start timer for role \`${originalName}\`: ${err.message}`);
       delete timers[guildId][role.id];
     }
   }
@@ -55,23 +61,28 @@ async function startRoleTimer(guild, role, originalName) {
 async function stopRoleTimer(guild, role) {
   const guildId = guild.id;
   const timer = timers[guildId]?.[role.id];
-  if (!timer) return;
+  const originalName = timer?.originalName || stripTimerPrefix(role.name);
+  if (role.name === originalName) {
+    if (timer) delete timers[guildId][role.id];
+    return;
+  }
 
   if (config.dryRun) {
-    console.log(`[DRY RUN] Would stop timer for role "${role.name}" -> "${timer.originalName}"`);
-    await sendMonitoring(`⏱️ [DRY RUN] Timer stopped for role \`${role.name}\` → would rename back to \`${timer.originalName}\``);
-    delete timers[guildId][role.id];
+    console.log(`[DRY RUN] Would stop timer for role "${role.name}" -> "${originalName}"`);
+    await sendMonitoring(`[DRY RUN] Timer stopped for role \`${role.name}\` -> would rename back to \`${originalName}\``);
+    if (timer) delete timers[guildId][role.id];
   } else {
     try {
+      const oldName = role.name;
       await throttleTimerRename();
-      await role.setName(timer.originalName, "Timer stopped (role empty)");
-      console.log(`Timer stopped for role "${timer.originalName}"`);
-      await sendMonitoring(`⏹️ **Timer stopped** for role \`${timer.originalName}\` – renamed back from \`${role.name}\``);
+      await role.setName(originalName, "Timer stopped (role empty)");
+      console.log(`Timer stopped for role "${originalName}"`);
+      await sendMonitoring(`Timer stopped for role \`${originalName}\` - renamed back from \`${oldName}\``);
     } catch (err) {
-      console.error(`Failed to stop timer for role ${timer.originalName}:`, err.message);
-      await sendMonitoring(`❌ Failed to stop timer for role \`${timer.originalName}\`: ${err.message}`);
+      console.error(`Failed to stop timer for role ${originalName}:`, err.message);
+      await sendMonitoring(`Failed to stop timer for role \`${originalName}\`: ${err.message}`);
     } finally {
-      delete timers[guildId][role.id];
+      if (timer) delete timers[guildId][role.id];
     }
   }
 }
@@ -83,7 +94,31 @@ function getRoleTimerMinutes(guildId, role, roleName) {
   return tracker.activeElapsedMinutes(guildId, "game", roleName, memberIds);
 }
 
+async function reconcileRoleTimersForGuild(guild) {
+  const guildId = guild.id;
+  const rolesMapping = roleMap[guildId];
+  if (!rolesMapping) return;
+
+  for (const [roleName, roleId] of Object.entries(rolesMapping)) {
+    const role = guild.roles.cache.get(roleId);
+    if (!role) continue;
+
+    if (humanMemberCount(role) === 0) {
+      await stopRoleTimer(guild, role);
+      continue;
+    }
+
+    if (!timers[guildId]?.[roleId]) {
+      await startRoleTimer(guild, role, stripTimerPrefix(roleName));
+    }
+  }
+}
+
 async function updateRoleTimers() {
+  for (const guild of client.guilds.cache.values()) {
+    await reconcileRoleTimersForGuild(guild);
+  }
+
   for (const guildId of Object.keys(timers)) {
     const guild = client.guilds.cache.get(guildId);
     if (!guild) continue;
@@ -95,8 +130,7 @@ async function updateRoleTimers() {
         continue;
       }
 
-      const humanCount = role.members.filter((member) => !member.user.bot).size;
-      if (humanCount === 0) {
+      if (humanMemberCount(role) === 0) {
         await stopRoleTimer(guild, role);
         continue;
       }
@@ -108,18 +142,18 @@ async function updateRoleTimers() {
 
       if (config.dryRun) {
         console.log(`[DRY RUN] Timer tick for role ${role.name} -> ${targetName}`);
-        await sendMonitoring(`⏱️ [DRY RUN] Timer tick: \`${role.name}\` would be renamed to \`${targetName}\``);
+        await sendMonitoring(`[DRY RUN] Timer tick: \`${role.name}\` would be renamed to \`${targetName}\``);
         timer.lastPrefixMinutes = elapsedMinutes;
       } else {
         try {
           await throttleTimerRename();
           await role.setName(targetName, `Timer tick ${elapsedMinutes}m`);
           console.log(`Timer tick for role ${timer.originalName}: [${elapsedMinutes}m]`);
-          await sendMonitoring(`⏱️ **Timer tick** – \`${timer.originalName}\` renamed to \`${targetName}\``);
+          await sendMonitoring(`Timer tick - \`${timer.originalName}\` renamed to \`${targetName}\``);
           timer.lastPrefixMinutes = elapsedMinutes;
         } catch (err) {
           console.error(`Failed to update role name for ${timer.originalName}:`, err.message);
-          await sendMonitoring(`❌ Failed to rename role \`${timer.originalName}\`: ${err.message}`);
+          await sendMonitoring(`Failed to rename role \`${timer.originalName}\`: ${err.message}`);
         }
       }
     }
@@ -139,21 +173,21 @@ async function initRoleTimersForGuild(guild) {
     if (role.name !== cleanName) {
       if (config.dryRun) {
         console.log(`[DRY RUN] Would clean role name from "${role.name}" to "${cleanName}"`);
-        await sendMonitoring(`[DRY RUN] Would clean role name: \`${role.name}\` → \`${cleanName}\``);
+        await sendMonitoring(`[DRY RUN] Would clean role name: \`${role.name}\` -> \`${cleanName}\``);
       } else {
         try {
           await throttleTimerRename();
           await role.setName(cleanName, "Cleaning prefix on startup");
           console.log(`Cleaned role name from "${role.name}" to "${cleanName}"`);
-          await sendMonitoring(`🧹 Cleaned role name: \`${role.name}\` → \`${cleanName}\``);
+          await sendMonitoring(`Cleaned role name: \`${role.name}\` -> \`${cleanName}\``);
         } catch (err) {
           console.error(`Failed to clean role name for ${cleanName}:`, err.message);
-          await sendMonitoring(`❌ Failed to clean role name: \`${role.name}\` → \`${cleanName}\`: ${err.message}`);
+          await sendMonitoring(`Failed to clean role name: \`${role.name}\` -> \`${cleanName}\`: ${err.message}`);
         }
       }
     }
 
-    if (role.members.size > 0 && (!timers[guildId] || !timers[guildId][roleId])) {
+    if (humanMemberCount(role) > 0 && (!timers[guildId] || !timers[guildId][roleId])) {
       await startRoleTimer(guild, role, cleanName);
     }
   }
@@ -168,5 +202,7 @@ module.exports = {
   stopRoleTimer,
   updateRoleTimers,
   initRoleTimersForGuild,
+  reconcileRoleTimersForGuild,
+  humanMemberCount,
   enableTimers,
 };

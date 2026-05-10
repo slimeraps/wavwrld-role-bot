@@ -2,7 +2,7 @@ const { config, premadeRoleIdsSet } = require("./config");
 const { getTargetRoleName, ensurePlayingPrefix, stripTimerPrefix } = require("./util");
 const { sendMonitoring } = require("./monitoring");
 const { roleMap, autoManaged, promotedRoles, saveData } = require("./state");
-const { startRoleTimer, stopRoleTimer } = require("./timers");
+const { startRoleTimer, stopRoleTimer, humanMemberCount } = require("./timers");
 const { checkPromotedRolesEmpty } = require("./promotion");
 const tracker = require("./tracker");
 
@@ -177,11 +177,12 @@ async function handlePresence(presence) {
             tracker.observeAbsence(guildId, "game", roleName, member.id);
             if (promotedRoles[guildId]?.includes(role.id)) removedPromotedRole = true;
 
-            if (role.members.size === 0) {
+            const remainingHumans = humanMemberCount(role, member.id);
+            if (remainingHumans === 0) {
               await stopRoleTimer(guild, role);
             }
 
-            if (role.members.size === 0 && config.autoDeleteUnusedRoles && !premadeRoleIdsSet.has(role.id)) {
+            if (remainingHumans === 0 && config.autoDeleteUnusedRoles && !premadeRoleIdsSet.has(role.id)) {
               try {
                 await role.delete("No members left");
                 autoManaged[guildId].delete(roleName);

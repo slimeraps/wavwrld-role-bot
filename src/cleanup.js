@@ -6,6 +6,7 @@ const client = require("./client");
 const { roleMap, autoManaged, promotedRoles, originalPositions, voiceChannelRoles, saveData } = require("./state");
 const { handlePresence } = require("./presence");
 const { initVoiceRolesForGuild } = require("./voice");
+const { stopRoleTimer } = require("./timers");
 
 async function cleanupEmptyManagedRoles(guild) {
   if (!config.autoDeleteUnusedRoles) return;
@@ -248,6 +249,7 @@ async function handleCleanupCmd(ctx) {
           }
         }
       }
+      await stopRoleTimer(guild, role);
     }
 
     if (config.fallbackRoleId) {
