@@ -3,7 +3,7 @@ const { config, persistConfig } = require("./config");
 const { sendMonitoring } = require("./monitoring");
 const { handleCleanupCmd, cleanupAndResync } = require("./cleanup");
 const m = require("./music");
-const { statsCmd } = require("./stats");
+const { statsCmd, playingCmd } = require("./stats");
 
 function ctxFromMessage(message) {
   return {
@@ -99,9 +99,32 @@ const COMMANDS = [
   },
   {
     name: "stats",
-    description: "Top members in the last 30 days — voice + game time with top game played",
+    description: "Top members. Optional category: alltime (lifetime) or voice (30d voice leaderboard).",
     aliases: ["leaderboard", "lb"],
+    options: [
+      {
+        name: "category",
+        type: ApplicationCommandOptionType.String,
+        required: false,
+        description: "Optional view: alltime or voice. Omit for the default 30-day overview.",
+        choices: [
+          { name: "alltime", value: "alltime" },
+          { name: "voice", value: "voice" },
+        ],
+      },
+    ],
+    parseText: (args) => {
+      const lower = args.map((a) => a.toLowerCase());
+      const category = lower.find((a) => a === "alltime" || a === "voice") || null;
+      return { category };
+    },
+    parseSlash: (i) => ({ category: i.options.getString("category") || null }),
     handler: statsCmd,
+  },
+  {
+    name: "playing",
+    description: "List all active game roles and how many members hold each",
+    handler: playingCmd,
   },
   {
     name: "play",

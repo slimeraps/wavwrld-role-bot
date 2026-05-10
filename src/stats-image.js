@@ -54,22 +54,19 @@ async function loadRoleIconCached(role) {
   }
 }
 
-function fmtHours(min) {
-  if (min <= 0) return "0h";
-  const h = min / 60;
-  if (h >= 100) return `${h.toFixed(0)}h`;
-  if (h >= 10) return `${h.toFixed(1)}h`;
-  return `${h.toFixed(2)}h`;
-}
-
-function fmtMinutesShort(min) {
+// Single time formatter used everywhere in the dashboards. Minute-based for
+// short spans, h+m for medium, d+h for long. Drops zero suffixes ("8h" not
+// "8h 0m") so the output stays compact.
+function fmtTime(min) {
+  if (min <= 0) return "0m";
   if (min < 1) return "<1m";
-  const days = Math.floor(min / 1440);
-  const hours = Math.floor((min % 1440) / 60);
-  const minutes = min % 60;
-  if (days > 0) return `${days}d ${hours}h`;
-  if (hours > 0) return `${hours}h ${minutes}m`;
-  return `${minutes}m`;
+  const m = Math.round(min);
+  if (m < 60) return `${m}m`;
+  const days = Math.floor(m / 1440);
+  const hours = Math.floor((m % 1440) / 60);
+  const minutes = m % 60;
+  if (days > 0) return hours > 0 ? `${days}d ${hours}h` : `${days}d`;
+  return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
 }
 
 function roundRect(ctx, x, y, w, h, r) {
@@ -152,7 +149,8 @@ function fillBackground(ctx, w, h) {
 }
 
 // Top Members list with role icons next to each top game.
-async function renderUsersDefault({ guildName, totals, members, guild, roleByGameKey }) {
+// `title` lets us reuse the same layout for "Last 30 Days" and "All Time" views.
+async function renderUsersDefault({ guildName, title, lookbackLabel, totals, members, guild, roleByGameKey }) {
   const memberRows = members.slice(0, 10);
 
   // Resolve + load role icons in parallel before we start drawing.
@@ -175,7 +173,7 @@ async function renderUsersDefault({ guildName, totals, members, guild, roleByGam
   fillBackground(ctx, WIDTH, height);
 
   let y = PADDING;
-  drawHeader(ctx, PADDING, y, WIDTH - PADDING * 2, "Top Members — Last 30 Days", guildName, PALETTE.accent);
+  drawHeader(ctx, PADDING, y, WIDTH - PADDING * 2, title || "Top Members — Last 30 Days", guildName, PALETTE.accent);
   y += headerH + GAP;
 
   const sumW = WIDTH - PADDING * 2;
@@ -183,8 +181,8 @@ async function renderUsersDefault({ guildName, totals, members, guild, roleByGam
   const rightW = sumW - leftW - GAP;
   drawBigStat(
     ctx, PADDING, y, leftW, summaryH,
-    "Server Lookback (30d)",
-    fmtHours(totals.voiceMonth + totals.gameMonth),
+    `Server Lookback (${lookbackLabel || "30d"})`,
+    fmtTime(totals.voiceLookback + totals.gameLookback),
     `${totals.activeMembers} active members`,
     PALETTE.accent,
   );
@@ -192,9 +190,9 @@ async function renderUsersDefault({ guildName, totals, members, guild, roleByGam
     ctx, PADDING + leftW + GAP, y, rightW, summaryH,
     "Voice Activity",
     [
-      { label: "1d", value: fmtHours(totals.voiceDay), color: PALETTE.voice },
-      { label: "7d", value: fmtHours(totals.voiceWeek), color: PALETTE.voice },
-      { label: "30d", value: fmtHours(totals.voiceMonth), color: PALETTE.voice },
+      { label: "1d", value: fmtTime(totals.voiceDay), color: PALETTE.voice },
+      { label: "7d", value: fmtTime(totals.voiceWeek), color: PALETTE.voice },
+      { label: "30d", value: fmtTime(totals.voiceMonth), color: PALETTE.voice },
     ],
   );
   y += summaryH + GAP;
@@ -223,7 +221,7 @@ async function renderUsersDefault({ guildName, totals, members, guild, roleByGam
     // Sub line: [icon] Game name (Xh Ym) — right-aligned at subRightX
     let subX = subRightX;
     if (row.topGame) {
-      const label = `${row.topGame.key} (${fmtMinutesShort(row.topGame.minutes)})`;
+      const label = `${row.topGame.key} (${fmtTime(row.topGame.minutes)})`;
       // Measure width to right-align the whole [icon + label] block.
       ctx.font = "12px UI";
       const labelW = ctx.measureText(label).width;
@@ -253,8 +251,138 @@ async function renderUsersDefault({ guildName, totals, members, guild, roleByGam
     }
 
     // Voice hours (right)
-    drawText(ctx, fmtHours(row.voiceMinutes), valueColX, ry, {
+    drawText(ctx, fmtTime(row.voiceMinutes), valueColX, ry, {
       size: 14, weight: "bold", color: PALETTE.voice, align: "right",
+    });
+  });
+
+  return canvas.toBuffer("image/png");
+}
+
+// ── /stats voice — top users by 30d voice minutes ─────────────────────
+function renderVoice30d({ guildName, totals, members }) {
+  const memberRows = members.slice(0, 10);
+  const headerH = 60;
+  const summaryH = 100;
+  const listHeaderH = 44;
+  const rowH = 30;
+  const listH = listHeaderH + rowH * memberRows.length + 12;
+  const height = PADDING * 2 + headerH + GAP + summaryH + GAP + listH;
+
+  const canvas = createCanvas(WIDTH, height);
+  const ctx = canvas.getContext("2d");
+  fillBackground(ctx, WIDTH, height);
+
+  let y = PADDING;
+  drawHeader(ctx, PADDING, y, WIDTH - PADDING * 2, "Top Voice Members — Last 30 Days", guildName, PALETTE.green);
+  y += headerH + GAP;
+
+  const sumW = WIDTH - PADDING * 2;
+  const leftW = Math.floor(sumW * 0.36);
+  const rightW = sumW - leftW - GAP;
+  drawBigStat(
+    ctx, PADDING, y, leftW, summaryH,
+    "30d Total VC",
+    fmtTime(totals.month),
+    `${totals.memberCount} members tracked`,
+    PALETTE.green,
+  );
+  drawTriStat(
+    ctx, PADDING + leftW + GAP, y, rightW, summaryH,
+    "Voice Activity",
+    [
+      { label: "1d", value: fmtTime(totals.day), color: PALETTE.voice },
+      { label: "7d", value: fmtTime(totals.week), color: PALETTE.voice },
+      { label: "30d", value: fmtTime(totals.month), color: PALETTE.voice },
+    ],
+  );
+  y += summaryH + GAP;
+
+  drawPanel(ctx, PADDING, y, sumW, listH);
+  drawText(ctx, "TOP VOICE MEMBERS", PADDING + 14, y + 26, { size: 11, weight: "bold", color: PALETTE.muted });
+
+  const rankColW = 28;
+  const valueColX = PADDING + sumW - 14;
+  const valueColW = 90;
+  const nameX = PADDING + 14 + rankColW;
+
+  memberRows.forEach((row, i) => {
+    const ry = y + listHeaderH + rowH * i + rowH / 2 + 4;
+    const rank = rankLabel(i);
+    drawText(ctx, rank.text, PADDING + 14, ry, { size: 14, weight: "bold", color: rank.color });
+    const nameText = truncate(ctx, row.displayName, 280, "bold 14px UI Bold");
+    drawText(ctx, nameText, nameX, ry, { size: 14, weight: "bold" });
+    drawText(ctx, `${row.percent}% of total`, valueColX - valueColW - 16, ry, {
+      size: 12, color: PALETTE.muted, align: "right",
+    });
+    drawText(ctx, fmtTime(row.minutes), valueColX, ry, {
+      size: 14, weight: "bold", color: PALETTE.voice, align: "right",
+    });
+  });
+
+  return canvas.toBuffer("image/png");
+}
+
+// ── /playing — active game roles + member counts ──────────────────────
+async function renderPlaying({ guildName, rows, totalActive, roleByName }) {
+  const visibleRows = rows.slice(0, 12);
+
+  // Pre-load role icons in parallel.
+  const resolved = await Promise.all(visibleRows.map(async (r) => {
+    const role = roleByName?.(r.roleName) || null;
+    const icon = await loadRoleIconCached(role);
+    return { row: r, icon, role };
+  }));
+
+  const headerH = 60;
+  const summaryH = 80;
+  const listHeaderH = 44;
+  const rowH = 36;
+  const listH = listHeaderH + rowH * visibleRows.length + 12;
+  const height = PADDING * 2 + headerH + GAP + summaryH + GAP + listH;
+
+  const canvas = createCanvas(WIDTH, height);
+  const ctx = canvas.getContext("2d");
+  fillBackground(ctx, WIDTH, height);
+
+  let y = PADDING;
+  drawHeader(ctx, PADDING, y, WIDTH - PADDING * 2, "Currently Playing", guildName, PALETTE.yellow);
+  y += headerH + GAP;
+
+  const sumW = WIDTH - PADDING * 2;
+  drawPanel(ctx, PADDING, y, sumW, summaryH);
+  drawText(ctx, "ACTIVE NOW", PADDING + 14, y + 22, { size: 11, weight: "bold", color: PALETTE.muted });
+  drawText(ctx, `${rows.length}`, PADDING + 14, y + 56, { size: 28, weight: "bold", color: PALETTE.yellow });
+  drawText(ctx, `${rows.length === 1 ? "game" : "games"} · ${totalActive} ${totalActive === 1 ? "person" : "people"} playing`, PADDING + 50, y + 56, { size: 14, color: PALETTE.text });
+  y += summaryH + GAP;
+
+  drawPanel(ctx, PADDING, y, sumW, listH);
+  drawText(ctx, "GAMES", PADDING + 14, y + 26, { size: 11, weight: "bold", color: PALETTE.muted });
+
+  const valueColX = PADDING + sumW - 14;
+  const iconColX = PADDING + 14;
+  const nameX = iconColX + 32;
+
+  resolved.forEach(({ row, icon }, i) => {
+    const ry = y + listHeaderH + rowH * i + rowH / 2 + 4;
+
+    if (icon) {
+      ctx.save();
+      ctx.beginPath();
+      const iy = ry - 18 / 2 - 5;
+      ctx.arc(iconColX + 12, iy + 12, 12, 0, Math.PI * 2);
+      ctx.closePath();
+      ctx.clip();
+      ctx.drawImage(icon, iconColX, iy, 24, 24);
+      ctx.restore();
+    }
+
+    const nameText = truncate(ctx, row.roleName, 360, "bold 14px UI Bold");
+    drawText(ctx, nameText, nameX, ry, { size: 14, weight: "bold" });
+
+    const countLabel = `${row.count} ${row.count === 1 ? "member" : "members"}`;
+    drawText(ctx, countLabel, valueColX, ry, {
+      size: 14, weight: "bold", color: PALETTE.accent, align: "right",
     });
   });
 
@@ -263,4 +391,6 @@ async function renderUsersDefault({ guildName, totals, members, guild, roleByGam
 
 module.exports = {
   renderUsersDefault,
+  renderVoice30d,
+  renderPlaying,
 };

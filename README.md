@@ -1,8 +1,34 @@
-# WAV Bot — 9.5.6 (Single /stats with role icons)
+# WAV Bot — 9.5.7 (Playing command + alltime/voice variants)
 
-9.5.6 simplifies `/stats` to a single 30-day lookback (the voice and games
-sub-views are gone) and renders Discord role icons inline next to each
-member's top game.
+9.5.7 adds `/playing` (active game roles + member counts), brings back
+`/stats voice` (now 30-day window), adds `/stats alltime` for lifetime
+totals, and switches all time formatting from decimal hours to a
+minute-based `Nm` / `Nh Mm` / `Nd Hh` style.
+
+## 9.5.7 changelog
+
+**`/playing` (and `!playing`):**
+- New image command listing every tracked role that currently has at
+  least one human member. Each row: role icon, role name, member
+  count. Header summary shows total active games and total people.
+- Bots are excluded from the count.
+
+**`/stats` variants:**
+- `/stats` (no args) — unchanged: 30-day "Top Members" lookback.
+- `/stats alltime` — same layout, but the lookback bucket is `lifetime`
+  and the title/labels read "All Time".
+- `/stats voice` — restored. Top 10 members by voice minutes in the
+  last 30 days; sub line shows each member's percent of total voice
+  time over the window.
+- Slash and text both accept the optional `category` keyword
+  (`!stats alltime`, `!stats voice`).
+
+**Time formatting:**
+- All durations now use a single `fmtTime(min)` helper. Output is
+  minute-based for short spans (`15m`), `Nh Mm` for medium, `Nd Hh` for
+  long. Zero suffixes are dropped (`8h`, not `8h 0m`).
+- Replaces the old decimal-hours format (`.25h`, `16.9h`) — small
+  values now read as actual minutes.
 
 ## 9.5.6 changelog
 
@@ -89,163 +115,6 @@ member's top game.
 - `ensureGuildBuckets()` is now idempotent for existing data — it adds
   the new `monthly` reset/playtime entries lazily so the schema migrates
   without a manual step.
-
-## 9.5.2 changelog
-
-**Time-tracking ledger (`src/tracker.js`):**
-- New session ledger backs both game and voice stats. `observePresence(...)`
-  opens a session (idempotent — safe to re-call); `observeAbsence(...)` closes
-  it and credits elapsed minutes to daily / weekly / lifetime buckets.
-- Game sessions open when the presence handler in [src/presence.js](src/presence.js)
-  observes a tracked activity, close when the role is removed.
-- Voice sessions open on VC join in [src/voice.js](src/voice.js), close on leave.
-  Keyed by channel ID so renames don't split the data; the most-recent channel
-  name is cached for the leaderboard label.
-- Sessions persist across restart. On boot, `bootBegin()` snapshots the open
-  set; the existing presence/voice sweeps re-open every session that's still
-  valid; `bootEnd()` closes any leftovers with zero credit (we don't know when
-  the activity actually stopped while the bot was offline).
-- A `SIGTERM`/`SIGINT` handler in `bot.js` flushes the debounced state file
-  before exit so a fly redeploy doesn't lose the last few session events.
-
-**Persistent history:**
-- `playtimeHistory` snapshots the top 25 entries per type before each daily /
-  weekly bucket reset. Bounded at 30 daily + 26 weekly snapshots per guild.
-- Old `activityStats` / `statsResetTimes` keys are still loaded so existing
-  data isn't trashed, but nothing reads them anymore — safe to drop in 9.6.
-
-**`/stats` updates:**
-- New required-ish `category:` option — `games` (default) or `voice`.
-- Numbers are minutes (`2h 15m`, `1d 4h`) instead of "sessions".
-- Top-3 entries get a "top: @user (Xh)" blurb pulled from per-user totals.
-- Live, still-open sessions are folded into the readout so a long Apex run
-  shows up before it ends.
-
-**Not in scope this round:**
-- `src/timers.js` was left alone — the `[Nm]` role-name timers will be wired
-  through the same ledger in the next release alongside the flakiness fix.
-- Scheduled weekly recap post (planned, separate change).
-
-## 9.5.1 changelog
-
-**Free-text searches return results again:**
-- After 9.5 dropped SoundCloud, the AUTO search engine had no extractor that
-  matched plain text and `/play darude` returned `No results`. The free-text
-  branch in [src/music.js](src/music.js) now passes
-  `searchEngine: "youtubeSearch"` so YouTube handles the lookup directly.
-  URL playback (YouTube, Spotify) is unchanged.
-
-## 9.5 changelog
-
-**Music actually plays:**
-- `SoundCloudExtractor` is now filtered out of `DefaultExtractors` before
-  `player.extractors.loadMulti(...)` in [src/music.js](src/music.js). YouTube
-  URLs, Spotify URLs (resolved via metadata → YouTube), and free-text
-  searches play reliably again.
-
-## 9.4 changelog
-
-**Music works:**
-- YouTube URLs, Spotify URLs (resolved via metadata → YouTube), and free-text
-  searches all play reliably. SoundCloud URLs are no longer supported.
-
-**Cleanup no longer restarts:**
-- `!cleanup` used to wipe roles and `process.exit(0)` to force a fresh
-  re-apply on boot. It now calls `resyncAllMembers()` inline and posts a
-  second confirmation when re-application finishes. The bot stays up — handy
-  when music is playing.
-
-**Activity stats / leaderboard:**
-- New `/stats` (aliases `/leaderboard`, `/lb`) with optional
-  `period: daily|weekly` (default `weekly`).
-- Increments a per-guild counter every time the bot adds a presence-driven
-  game role; persisted in `roles.json` under `activityStats` /
-  `statsResetTimes`.
-- Rolling 24-hour and 7-day windows — each counter resets on the first event
-  after its window expires (not calendar-aligned).
-- Anyone can run it in any channel — no VIP/owner gate, no channel filter.
-- Output is a polished embed: top 3 get medals + progress bars; positions 4–10
-  get a compact line. Three-column summary (Champion / Tracked / Resets) with
-  a Discord relative timestamp for the next reset. Daily and weekly views use
-  distinct accent colors; the guild icon is used as the thumbnail.
-
-## 9.3 changelog
-
-**Voice channel roles:**
-- While a member is in any voice channel they get a hoisted role named
-  **"In `<channel name>`"** (sanitization strips `╰`, `┋`, and `╭`; emojis are
-  preserved).
-- Roles are created on demand the first time someone enters the channel and
-  auto-deleted when the last person leaves (gated by `autoDeleteUnusedRoles`).
-- Renaming the voice channel renames the role automatically.
-- Position is **activity-aware**: if anyone in the voice channel has a tracked
-  activity role, the voice role is placed one slot below the highest such role
-  so the activity grouping wins in the member list. Falls back to its default
-  slot otherwise. Position updates are skipped while the voice role is
-  VIP-promoted.
-- Tracked across restarts in `roles.json` under a new `voiceChannels` key per
-  guild.
-- Independent of `onlyUsePremadeRoles` — voice roles are always created on
-  demand.
-
-**Member status panel (`src/panel.js`):**
-- Lightweight HTTP server (no framework) that serves a single self-contained
-  HTML page plus a JSON `/api/members` endpoint.
-- **Token-gated** via `PANEL_TOKEN` env/secret. Auth via `?key=…` query string
-  or `Authorization: Bearer …` header; comparison uses constant-time
-  `crypto.timingSafeEqual`.
-- Returns online members only, with status, current activities (game name,
-  details, state, emoji), current voice channel, hoisted and top-role colors.
-  The HTML page polls the JSON endpoint and renders a Discord-styled grid.
-- Routes: `/` (HTML), `/api/members` (JSON), `/healthz`.
-- Disabled when `PANEL_TOKEN` is not set — set the secret to enable.
-- Env vars: `PANEL_TOKEN` (required), `PANEL_PORT` (default `8080`),
-  `PANEL_GUILD_ID` (optional; falls back to the first guild the bot is in).
-
-**Other changes:**
-- `bot.js` calls `startPanel(client)` on boot.
-- `fly.toml` adds `PANEL_PORT=8080` env and an `[http_service]` block for the
-  panel.
-- `src/state.js` exports new buckets: `voiceChannelRoles`, `activityStats`,
-  `statsResetTimes`. The `roles.json` schema gained matching fields.
-- `src/util.js` adds `voiceRoleNameForChannel(channelName)` for the sanitizer.
-- The bot was now fully functional locally — but still wouldn't run reliably
-  on the virtual machine. That last gap is what 9.4 closes.
-
-## 9.2 changelog
-
-Bug-fix-only release — no new features. Patched issues with role assignment
-and monitoring/log output.
-
-## 9.1 changelog
-
-Music progress, no new commands. The bot now joins voice channels on `/play`
-and the queue works correctly, but actual audio playback still fails — the
-player connects, accepts tracks, and shows the queue, just doesn't push
-audio. Playback is what 9.4 finally fixes.
-
-## 9.0 changelog
-
-**New features:**
-- **Music module** — adds `/play`, `/pause`, `/resume`, `/skip`, `/stop`,
-  `/queue`, `/nowplaying`, `/volume`, `/help`. In 9.0 the commands register
-  and the queue accepts tracks, but the bot doesn't join voice channels yet
-  — VC joining lands in 9.1, working playback in 9.4.
-- **Slash + text parity** — every command works as both `/cmd` and `!cmd`.
-  The bot registers slash specs per-guild on `ready`, so changes propagate
-  instantly without waiting for global propagation.
-
-## 8.4 changelog (initial VM upload)
-
-**Hosting / Docker changes:**
-- Base image is **`node:22-bookworm-slim`** (Node 20 lacks
-  `webidl.util.markAsUncloneable` required by latest `undici`).
-- Multi-stage build: stage 1 has `python3 make g++` for native module
-  compilation (`@discordjs/opus`, `sodium-native`); stage 2 ships only the
-  runtime deps.
-- Runtime image installs `python3` (yt-dlp's interpreter on Linux) and `deno`
-  (yt-dlp's JS runtime for YouTube signature decryption).
-- Fly memory bumped 256 → 512 MB to give ffmpeg/opus headroom.
 
 ## Code layout (8.4)
 
