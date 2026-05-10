@@ -3,7 +3,7 @@ const { config, persistConfig } = require("./config");
 const { sendMonitoring } = require("./monitoring");
 const { handleCleanupCmd, cleanupAndResync } = require("./cleanup");
 const m = require("./music");
-const { statsCmd, playingCmd } = require("./stats");
+const { statsCmd } = require("./stats");
 
 function ctxFromMessage(message) {
   return {
@@ -101,20 +101,7 @@ const COMMANDS = [
     name: "stats",
     description: "Top members in the last 30 days — voice + game time with top game played",
     aliases: ["leaderboard", "lb"],
-    // Slash form is the default 30d view only. The `alltime` and `voice` variants
-    // are text-only (`!stats alltime`, `!stats voice`) — Discord's option-dropdown
-    // UI was making them awkward to invoke.
-    parseText: (args) => {
-      const lower = args.map((a) => a.toLowerCase());
-      const category = lower.find((a) => a === "alltime" || a === "voice") || null;
-      return { category };
-    },
     handler: statsCmd,
-  },
-  {
-    name: "playing",
-    description: "List all active game roles and how many members hold each",
-    handler: playingCmd,
   },
   {
     name: "play",

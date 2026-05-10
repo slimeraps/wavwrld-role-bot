@@ -126,25 +126,13 @@ async function runVoice30d(ctx, guild) {
   return sendImage(ctx, buffer, "stats-voice.png");
 }
 
-async function statsCmd(ctx, { category } = {}) {
+async function statsCmd(ctx) {
   const guild = ctx.guild;
   if (!guild) return ctx.reply("This command only works in a server.");
 
   await ctx.defer();
 
   try {
-    const cat = category === "voice" ? "voice"
-      : category === "alltime" ? "alltime"
-      : "users";
-
-    if (cat === "voice") return await runVoice30d(ctx, guild);
-    if (cat === "alltime") {
-      return await runUsersView(ctx, guild, {
-        period: "lifetime",
-        title: "Top Members — All Time",
-        lookbackLabel: "all time",
-      });
-    }
     return await runUsersView(ctx, guild, {
       period: "monthly",
       title: "Top Members — Last 30 Days",

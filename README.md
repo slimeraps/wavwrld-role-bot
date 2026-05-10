@@ -1,9 +1,31 @@
-# WAV Bot — 9.5.8 (text-only stats variants)
+# WAV Bot — 9.6 (retire /playing and /stats variants)
 
-9.5.8 demotes the `alltime` and `voice` stats variants to text-only.
-Slash UI was awkward for picking the variant from a dropdown; the
-direct-typed `!stats alltime` / `!stats voice` is what the server
-actually uses. `/playing` and `/play` are unaffected.
+9.6 removes the `/playing` command and the `alltime` / `voice` stats
+variants. They were clutter and rarely used — only the default 30-day
+"Top Members" view of `/stats` remains. The rendering helpers
+(`runVoice30d`, `playingCmd`) are still in `src/stats.js` so the
+underlying machinery can be brought back if we ever want it, but no
+command is wired to them.
+
+## 9.6 changelog
+
+**Removed commands:**
+- `/playing` and `!playing` — gone. Bot no longer registers the slash
+  command and silently ignores the text form.
+- `!stats alltime` and `!stats voice` — gone. Typing them still hits
+  the `stats` command, but the category arg is ignored and you get the
+  default 30-day view. No error message in chat.
+
+**What's left:**
+- `/stats` (and `!stats`, `!leaderboard`, `!lb`) — single 30-day "Top
+  Members" image. Same renderer, same layout as 9.5.x.
+
+**Implementation notes:**
+- `src/commands.js` no longer imports `playingCmd` and no longer has a
+  `parseText` on the `stats` entry.
+- `src/stats.js` keeps `runVoice30d`, `playingCmd`, and the lifetime
+  branch of `runUsersView` as dead code on purpose ("the bones") so
+  the render path is one edit away if we want them back.
 
 ## 9.5.8 changelog
 
