@@ -99,10 +99,20 @@ const COMMANDS = [
   },
   {
     name: "stats",
-    description: "Show the most played games today or this week",
+    description: "Show the leaderboard for games or voice activity",
     aliases: ["leaderboard", "lb"],
     options: [
-      { 
+      {
+        name: "category",
+        type: ApplicationCommandOptionType.String,
+        required: false,
+        description: "games or voice (default: games)",
+        choices: [
+          { name: "games", value: "games" },
+          { name: "voice", value: "voice" },
+        ],
+      },
+      {
         name: "period",
         type: ApplicationCommandOptionType.String,
         required: false,
@@ -113,8 +123,17 @@ const COMMANDS = [
         ],
       },
     ],
-    parseText: (args) => ({ period: args[0]?.toLowerCase() || "weekly" }),
-    parseSlash: (i) => ({ period: i.options.getString("period") || "weekly" }),
+    parseText: (args) => {
+      // Accept either order: `!stats voice weekly` or `!stats weekly voice`.
+      const lower = args.map((a) => a.toLowerCase());
+      const category = lower.find((a) => a === "games" || a === "voice") || "games";
+      const period = lower.find((a) => a === "daily" || a === "weekly") || "weekly";
+      return { category, period };
+    },
+    parseSlash: (i) => ({
+      category: i.options.getString("category") || "games",
+      period: i.options.getString("period") || "weekly",
+    }),
     handler: statsCmd,
   },
   {

@@ -3,6 +3,7 @@ const { config } = require("./config");
 const { voiceRoleNameForChannel } = require("./util");
 const { sendMonitoring } = require("./monitoring");
 const { roleMap, autoManaged, promotedRoles, voiceChannelRoles, saveData } = require("./state");
+const tracker = require("./tracker");
 
 const VOICE_CHANNEL_TYPES = new Set([ChannelType.GuildVoice, ChannelType.GuildStageVoice]);
 const VOICE_ROLE_COLOR = 0xffa6c9;
@@ -179,6 +180,10 @@ async function addVoiceRole(member, channel) {
   const guild = member.guild;
   const role = await ensureVoiceRoleForChannel(guild, channel);
   if (!role) return;
+  // Observe before the early return so boot-time sweeps reopen sessions for
+  // members already in voice (and already holding the role) from a prior run.
+  // observePresence is idempotent — safe to call repeatedly.
+  tracker.observePresence(guild.id, "voice", channel.id, member.id, { channelName: channel.name });
   if (member.roles.cache.has(role.id)) return;
 
   if (config.dryRun) {
@@ -218,6 +223,7 @@ async function removeVoiceRoleForChannel(guild, member, channelId, channelLabel)
         await member.roles.remove(role, `Left voice channel "${channelLabel}"`);
         console.log(`- ${member.user.tag} → ${role.name} (voice)`);
         await sendMonitoring(`➖ **Voice role removed** – \`${role.name}\` removed from ${member.user.tag} (${member.id})`);
+        tracker.observeAbsence(guild.id, "voice", channelId, member.id);
       } catch (err) {
         console.error(`Failed to remove voice role from ${member.user.tag}:`, err.message);
         await sendMonitoring(`❌ Failed to remove voice role \`${role.name}\` from ${member.user.tag}: ${err.message}`);

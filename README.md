@@ -1,11 +1,45 @@
-# WAV Bot — 9.5.1 (Music Integration)
+# WAV Bot — 9.5.2 (Stats Overhaul)
 
-9.5 actually removes SoundCloud from the extractor list (9.4's changelog
-claimed this but only edited docs). With SoundCloud gone, free-text searches
-and Spotify-resolved tracks no longer get hijacked into an unplayable stream
-that made the queue "finish" the moment the bot joined VC. 9.5.1 follows up
-by routing free-text `/play` searches to YouTube directly, since AUTO had
-been silently relying on SoundCloud to handle plain text.
+9.5 fixed music. 9.5.2 rebuilds the stats module on top of a real time-tracking
+ledger: `/stats` now reports actual minutes played (or spent in voice) rather
+than session counts, and adds a `category:voice` view. Period rollovers
+snapshot into a persistent history instead of vanishing.
+
+## 9.5.2 changelog
+
+**Time-tracking ledger (`src/tracker.js`):**
+- New session ledger backs both game and voice stats. `observePresence(...)`
+  opens a session (idempotent — safe to re-call); `observeAbsence(...)` closes
+  it and credits elapsed minutes to daily / weekly / lifetime buckets.
+- Game sessions open when the presence handler in [src/presence.js](src/presence.js)
+  observes a tracked activity, close when the role is removed.
+- Voice sessions open on VC join in [src/voice.js](src/voice.js), close on leave.
+  Keyed by channel ID so renames don't split the data; the most-recent channel
+  name is cached for the leaderboard label.
+- Sessions persist across restart. On boot, `bootBegin()` snapshots the open
+  set; the existing presence/voice sweeps re-open every session that's still
+  valid; `bootEnd()` closes any leftovers with zero credit (we don't know when
+  the activity actually stopped while the bot was offline).
+- A `SIGTERM`/`SIGINT` handler in `bot.js` flushes the debounced state file
+  before exit so a fly redeploy doesn't lose the last few session events.
+
+**Persistent history:**
+- `playtimeHistory` snapshots the top 25 entries per type before each daily /
+  weekly bucket reset. Bounded at 30 daily + 26 weekly snapshots per guild.
+- Old `activityStats` / `statsResetTimes` keys are still loaded so existing
+  data isn't trashed, but nothing reads them anymore — safe to drop in 9.6.
+
+**`/stats` updates:**
+- New required-ish `category:` option — `games` (default) or `voice`.
+- Numbers are minutes (`2h 15m`, `1d 4h`) instead of "sessions".
+- Top-3 entries get a "top: @user (Xh)" blurb pulled from per-user totals.
+- Live, still-open sessions are folded into the readout so a long Apex run
+  shows up before it ends.
+
+**Not in scope this round:**
+- `src/timers.js` was left alone — the `[Nm]` role-name timers will be wired
+  through the same ledger in the next release alongside the flakiness fix.
+- Scheduled weekly recap post (planned, separate change).
 
 ## 9.5.1 changelog
 

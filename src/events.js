@@ -3,6 +3,7 @@ const { stripTimerPrefix } = require("./util");
 const { sendMonitoring } = require("./monitoring");
 const client = require("./client");
 const { roleMap, autoManaged, promotedRoles, voiceChannelRoles, saveData } = require("./state");
+const tracker = require("./tracker");
 const { initRoleTimersForGuild, enableTimers } = require("./timers");
 const { promoteRole, unpromoteRole, checkPromotedRolesEmpty } = require("./promotion");
 const { handlePresence } = require("./presence");
@@ -28,6 +29,8 @@ function register() {
       `🤖 **Bot started** – \`${client.user.tag}\`\nDry run: ${config.dryRun ? "ON" : "OFF"}\nOnly premade roles: ${config.onlyUsePremadeRoles ? "ON" : "OFF"}`,
       { noDryRunPrefix: true },
     );
+
+    tracker.bootBegin();
 
     for (const guild of client.guilds.cache.values()) {
       const botMember = guild.members.me;
@@ -84,6 +87,10 @@ function register() {
         }
       }
     }
+
+    // Close any sessions that were on disk but didn't reappear during the sweep.
+    // Conservative: zero-credit, since we can't tell when activity actually ended.
+    tracker.bootEnd();
 
     if (!config.dryRun) saveData();
     console.log("Startup sync complete – enabling timers.");

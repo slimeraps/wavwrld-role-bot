@@ -4,7 +4,7 @@ const { sendMonitoring } = require("./monitoring");
 const { roleMap, autoManaged, promotedRoles, saveData } = require("./state");
 const { startRoleTimer, stopRoleTimer } = require("./timers");
 const { checkPromotedRolesEmpty } = require("./promotion");
-const { logActivity } = require("./stats");
+const tracker = require("./tracker");
 
 async function handlePresence(presence) {
   const member = presence.member;
@@ -150,7 +150,12 @@ async function handlePresence(presence) {
       }
     }
 
-    if (targetRoleName) currentTargetRoleNames.add(targetRoleName);
+    if (targetRoleName) {
+      currentTargetRoleNames.add(targetRoleName);
+      // Idempotent: opens a new session if not already open, refreshes name otherwise.
+      // Fires on every observed presence so boot-time scans correctly re-open existing sessions.
+      tracker.observePresence(guildId, "game", targetRoleName, member.id);
+    }
   }
 
   let removedPromotedRole = false;
@@ -171,6 +176,7 @@ async function handlePresence(presence) {
             await member.roles.remove(role, `Stopped playing ${roleName}`);
             console.log(`- ${member.user.tag} → ${roleName}`);
             await sendMonitoring(`➖ **Role removed** – \`${role.name}\` removed from ${member.user.tag} (${member.id})`);
+            tracker.observeAbsence(guildId, "game", roleName, member.id);
             if (promotedRoles[guildId]?.includes(role.id)) removedPromotedRole = true;
 
             if (role.members.size === 0) {
