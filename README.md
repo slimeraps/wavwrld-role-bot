@@ -1,9 +1,21 @@
-# WAV Bot — 9.5.7 (Playing command + alltime/voice variants)
+# WAV Bot — 9.5.8 (text-only stats variants)
 
-9.5.7 adds `/playing` (active game roles + member counts), brings back
-`/stats voice` (now 30-day window), adds `/stats alltime` for lifetime
-totals, and switches all time formatting from decimal hours to a
-minute-based `Nm` / `Nh Mm` / `Nd Hh` style.
+9.5.8 demotes the `alltime` and `voice` stats variants to text-only.
+Slash UI was awkward for picking the variant from a dropdown; the
+direct-typed `!stats alltime` / `!stats voice` is what the server
+actually uses. `/playing` and `/play` are unaffected.
+
+## 9.5.8 changelog
+
+**Stats variant invocation:**
+- `/stats` slash → 30-day "Top Members" overview only. The `category`
+  option is removed from the slash schema.
+- `!stats alltime` → lifetime view (text only).
+- `!stats voice` → 30-day voice leaderboard (text only).
+- Commands gain a `textOnly: true` flag picked up by `slashSpecs()` so
+  flagged commands are excluded from slash registration on boot. (No
+  command currently uses it — kept as the mechanism for any future
+  text-only additions.)
 
 ## 9.5.7 changelog
 
@@ -13,15 +25,10 @@ minute-based `Nm` / `Nh Mm` / `Nd Hh` style.
   count. Header summary shows total active games and total people.
 - Bots are excluded from the count.
 
-**`/stats` variants:**
-- `/stats` (no args) — unchanged: 30-day "Top Members" lookback.
-- `/stats alltime` — same layout, but the lookback bucket is `lifetime`
-  and the title/labels read "All Time".
-- `/stats voice` — restored. Top 10 members by voice minutes in the
-  last 30 days; sub line shows each member's percent of total voice
-  time over the window.
-- Slash and text both accept the optional `category` keyword
-  (`!stats alltime`, `!stats voice`).
+**Stats variants (initial):**
+- `!stats alltime` — same layout as default, lifetime bucket.
+- `!stats voice` — top 10 members by voice minutes in the last 30 days,
+  with each member's percent of total voice time over the window.
 
 **Time formatting:**
 - All durations now use a single `fmtTime(min)` helper. Output is

@@ -99,26 +99,16 @@ const COMMANDS = [
   },
   {
     name: "stats",
-    description: "Top members. Optional category: alltime (lifetime) or voice (30d voice leaderboard).",
+    description: "Top members in the last 30 days — voice + game time with top game played",
     aliases: ["leaderboard", "lb"],
-    options: [
-      {
-        name: "category",
-        type: ApplicationCommandOptionType.String,
-        required: false,
-        description: "Optional view: alltime or voice. Omit for the default 30-day overview.",
-        choices: [
-          { name: "alltime", value: "alltime" },
-          { name: "voice", value: "voice" },
-        ],
-      },
-    ],
+    // Slash form is the default 30d view only. The `alltime` and `voice` variants
+    // are text-only (`!stats alltime`, `!stats voice`) — Discord's option-dropdown
+    // UI was making them awkward to invoke.
     parseText: (args) => {
       const lower = args.map((a) => a.toLowerCase());
       const category = lower.find((a) => a === "alltime" || a === "voice") || null;
       return { category };
     },
-    parseSlash: (i) => ({ category: i.options.getString("category") || null }),
     handler: statsCmd,
   },
   {
@@ -211,11 +201,13 @@ for (const c of COMMANDS) {
 }
 
 function slashSpecs() {
-  return COMMANDS.map((c) => ({
-    name: c.name,
-    description: c.description,
-    options: c.options || [],
-  }));
+  return COMMANDS
+    .filter((c) => !c.textOnly)
+    .map((c) => ({
+      name: c.name,
+      description: c.description,
+      options: c.options || [],
+    }));
 }
 
 async function checkGates(ctx, cmd) {
