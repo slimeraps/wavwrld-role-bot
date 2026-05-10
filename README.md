@@ -1,9 +1,20 @@
-# WAV Bot — 9.5 (Music Integration)
+# WAV Bot — 9.5.1 (Music Integration)
 
 9.5 actually removes SoundCloud from the extractor list (9.4's changelog
 claimed this but only edited docs). With SoundCloud gone, free-text searches
 and Spotify-resolved tracks no longer get hijacked into an unplayable stream
-that made the queue "finish" the moment the bot joined VC.
+that made the queue "finish" the moment the bot joined VC. 9.5.1 follows up
+by routing free-text `/play` searches to YouTube directly, since AUTO had
+been silently relying on SoundCloud to handle plain text.
+
+## 9.5.1 changelog
+
+**Free-text searches return results again:**
+- After 9.5 dropped SoundCloud, the AUTO search engine had no extractor that
+  matched plain text and `/play darude` returned `No results`. The free-text
+  branch in [src/music.js](src/music.js) now passes
+  `searchEngine: "youtubeSearch"` so YouTube handles the lookup directly.
+  URL playback (YouTube, Spotify) is unchanged.
 
 ## 9.5 changelog
 
