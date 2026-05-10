@@ -1,9 +1,38 @@
-# WAV Bot — 9.5.2 (Stats Overhaul)
+# WAV Bot — 9.5.3 (Member-Centric Stats)
 
-9.5 fixed music. 9.5.2 rebuilds the stats module on top of a real time-tracking
-ledger: `/stats` now reports actual minutes played (or spent in voice) rather
-than session counts, and adds a `category:voice` view. Period rollovers
-snapshot into a persistent history instead of vanishing.
+9.5.3 reshapes `/stats` around members instead of channels/games. Default
+`/stats` is now a top-members leaderboard for the last 30 days, `/stats voice`
+is a lifetime VC leaderboard, and `/stats games` keeps the per-game view
+with a new `lifetime` period option.
+
+## 9.5.3 changelog
+
+**`/stats` (no args) — top members, last 30 days:**
+- New default category `users`. Per-member rows show 🔊 VC time, 🎮 game
+  time, and the top game played in the window (with hours).
+- Backed by a new `monthly` (30-day rolling) bucket added to the tracker;
+  daily / weekly / monthly / lifetime are all rolled forward by the same
+  reset path, with monthly snapshots bounded to 12 entries per guild.
+- Sorted by VC minutes (primary) — anyone who's only gamed appears below
+  the voice regulars; switch to `/stats games` for a game-first view.
+
+**`/stats voice` — simplified:**
+- Lifetime only, no `period` option.
+- Sorted by total VC minutes per user, top 10.
+- Channel breakdown removed — pure user leaderboard.
+
+**`/stats games` — same view, new period:**
+- Per-game leaderboard preserved; period choices are `daily`, `weekly`
+  (default), and the new `lifetime`.
+- Lifetime view skips the "next reset" field (it never resets).
+
+**Tracker additions:**
+- `userTotals(guildId, type, period)` aggregates by user instead of by
+  key, returning per-user totals plus that user's top key (most-played
+  game / most-used voice channel) for the same window.
+- `ensureGuildBuckets()` is now idempotent for existing data — it adds
+  the new `monthly` reset/playtime entries lazily so the schema migrates
+  without a manual step.
 
 ## 9.5.2 changelog
 

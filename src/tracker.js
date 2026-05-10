@@ -9,10 +9,12 @@ const {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WEEK_MS = 7 * DAY_MS;
+const MONTH_MS = 30 * DAY_MS;
 const HISTORY_DAILY_MAX = 30;
 const HISTORY_WEEKLY_MAX = 26;
+const HISTORY_MONTHLY_MAX = 12;
 const TYPES = ["game", "voice"];
-const PERIODS = ["daily", "weekly", "lifetime"];
+const PERIODS = ["daily", "weekly", "monthly", "lifetime"];
 
 // In-memory set of session IDs observed during the current boot sweep.
 // Used by sweepBoot() to close sessions that didn't reappear.
@@ -33,7 +35,12 @@ function ensureGuildBuckets(guildId) {
   }
   if (!playtimeResets[guildId]) {
     const now = Date.now();
-    playtimeResets[guildId] = { daily: now, weekly: now };
+    playtimeResets[guildId] = { daily: now, weekly: now, monthly: now };
+  } else {
+    const now = Date.now();
+    if (playtimeResets[guildId].daily == null) playtimeResets[guildId].daily = now;
+    if (playtimeResets[guildId].weekly == null) playtimeResets[guildId].weekly = now;
+    if (playtimeResets[guildId].monthly == null) playtimeResets[guildId].monthly = now;
   }
   if (!playtimeHistory[guildId]) playtimeHistory[guildId] = [];
   if (!voiceChannelNames[guildId]) voiceChannelNames[guildId] = {};
@@ -59,7 +66,9 @@ function snapshotBucket(guildId, period, endedAt) {
 
   playtimeHistory[guildId].push({ period, endedAt, byType });
   // Trim per-period to keep file size bounded.
-  const max = period === "daily" ? HISTORY_DAILY_MAX : HISTORY_WEEKLY_MAX;
+  const max = period === "daily" ? HISTORY_DAILY_MAX
+    : period === "weekly" ? HISTORY_WEEKLY_MAX
+    : HISTORY_MONTHLY_MAX;
   const sameKind = playtimeHistory[guildId].filter((h) => h.period === period);
   if (sameKind.length > max) {
     const toDrop = sameKind.length - max;
@@ -88,6 +97,11 @@ function checkResets(guildId) {
     snapshotBucket(guildId, "weekly", now);
     for (const type of TYPES) playtime[guildId][type].weekly = {};
     resets.weekly = now;
+  }
+  if (now - resets.monthly >= MONTH_MS) {
+    snapshotBucket(guildId, "monthly", now);
+    for (const type of TYPES) playtime[guildId][type].monthly = {};
+    resets.monthly = now;
   }
 }
 
@@ -226,6 +240,50 @@ function getResets(guildId) {
   return playtimeResets[guildId];
 }
 
+// Aggregate by userId (instead of by key). Returns
+// [{ userId, minutes, topKey: { key, minutes } | null }, ...] sorted desc.
+// Folds in still-open sessions so live activity shows up.
+function userTotals(guildId, type, period) {
+  ensureGuildBuckets(guildId);
+  checkResets(guildId);
+  const bucket = playtime[guildId][type][period] || {};
+
+  // userId -> { total, perKey: { key: minutes } }
+  const acc = new Map();
+  function add(userId, key, minutes) {
+    if (minutes <= 0) return;
+    let row = acc.get(userId);
+    if (!row) {
+      row = { total: 0, perKey: {} };
+      acc.set(userId, row);
+    }
+    row.total += minutes;
+    row.perKey[key] = (row.perKey[key] || 0) + minutes;
+  }
+
+  for (const [key, byUser] of Object.entries(bucket)) {
+    for (const [userId, minutes] of Object.entries(byUser)) {
+      add(userId, key, minutes);
+    }
+  }
+  // Fold in live, still-open sessions of the matching type.
+  for (const open of Object.values(openSessions[guildId] || {})) {
+    if (open.type !== type) continue;
+    const m = Math.floor((Date.now() - open.startedAt) / 60_000);
+    add(open.subjectId, open.key, m);
+  }
+
+  return [...acc.entries()]
+    .map(([userId, row]) => {
+      let topKey = null;
+      for (const [k, m] of Object.entries(row.perKey)) {
+        if (!topKey || m > topKey.minutes) topKey = { key: k, minutes: m };
+      }
+      return { userId, minutes: row.total, topKey };
+    })
+    .sort((a, b) => b.minutes - a.minutes);
+}
+
 function getVoiceChannelName(guildId, channelId) {
   return voiceChannelNames[guildId]?.[channelId] || null;
 }
@@ -242,6 +300,7 @@ module.exports = {
   bootBegin,
   bootEnd,
   leaderboard,
+  userTotals,
   getResets,
   getVoiceChannelName,
   rememberVoiceChannelName,

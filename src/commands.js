@@ -99,39 +99,41 @@ const COMMANDS = [
   },
   {
     name: "stats",
-    description: "Show the leaderboard for games or voice activity",
+    description: "Top members (default), voice leaderboard, or game leaderboard",
     aliases: ["leaderboard", "lb"],
     options: [
       {
         name: "category",
         type: ApplicationCommandOptionType.String,
         required: false,
-        description: "games or voice (default: games)",
+        description: "users (default, last 30d), voice (lifetime), or games",
         choices: [
-          { name: "games", value: "games" },
+          { name: "users", value: "users" },
           { name: "voice", value: "voice" },
+          { name: "games", value: "games" },
         ],
       },
       {
         name: "period",
         type: ApplicationCommandOptionType.String,
         required: false,
-        description: "daily or weekly (default: weekly)",
+        description: "Only used by 'games': daily, weekly (default), or lifetime",
         choices: [
           { name: "daily", value: "daily" },
           { name: "weekly", value: "weekly" },
+          { name: "lifetime", value: "lifetime" },
         ],
       },
     ],
     parseText: (args) => {
-      // Accept either order: `!stats voice weekly` or `!stats weekly voice`.
+      // Accept either order: `!stats games daily` or `!stats daily games`.
       const lower = args.map((a) => a.toLowerCase());
-      const category = lower.find((a) => a === "games" || a === "voice") || "games";
-      const period = lower.find((a) => a === "daily" || a === "weekly") || "weekly";
+      const category = lower.find((a) => a === "users" || a === "voice" || a === "games") || "users";
+      const period = lower.find((a) => a === "daily" || a === "weekly" || a === "lifetime") || "weekly";
       return { category, period };
     },
     parseSlash: (i) => ({
-      category: i.options.getString("category") || "games",
+      category: i.options.getString("category") || "users",
       period: i.options.getString("period") || "weekly",
     }),
     handler: statsCmd,
