@@ -7,6 +7,26 @@ variants. They were clutter and rarely used — only the default 30-day
 underlying machinery can be brought back if we ever want it, but no
 command is wired to them.
 
+## 9.6.1 changelog
+
+**Role timers:**
+- Role name timers now read live game-session time from the same tracker
+  state used by `/stats`, instead of keeping a separate role-level
+  stopwatch in `src/timers.js`.
+- Timer prefixes now survive bot restarts more accurately because startup
+  presence sync reopens tracker sessions first, then timer init reads
+  those live sessions.
+- If multiple human members hold the same game role, the prefix uses the
+  longest active tracked session for that role.
+
+**Implementation notes:**
+- `src/tracker.js` adds `activeElapsedMinutes(...)` for callers that need
+  the live elapsed time of currently open sessions.
+- `src/timers.js` removed its private `startTime` source and now uses the
+  tracker helper for `[Nm]` role-name updates.
+- `src/presence.js` no longer calls the dead legacy `logActivity()`
+  shim, which could interrupt role assignment before timer startup.
+
 ## 9.6 changelog
 
 **Removed commands:**

@@ -162,6 +162,18 @@ function elapsedMinutes(guildId, type, key, subjectId) {
   return Math.floor((Date.now() - open.startedAt) / 60_000);
 }
 
+function activeElapsedMinutes(guildId, type, key, subjectIds = null) {
+  const allowed = subjectIds ? new Set(subjectIds) : null;
+  let max = 0;
+  for (const open of Object.values(openSessions[guildId] || {})) {
+    if (open.type !== type || open.key !== key) continue;
+    if (allowed && !allowed.has(open.subjectId)) continue;
+    const minutes = elapsedMinutes(guildId, type, key, open.subjectId);
+    if (minutes > max) max = minutes;
+  }
+  return max;
+}
+
 // --- boot sweep ---
 // Wrap the startup pass with bootBegin()/bootEnd(). Any session that was open
 // on disk but isn't re-observed during the sweep is closed with zero credit
@@ -297,6 +309,7 @@ module.exports = {
   observePresence,
   observeAbsence,
   elapsedMinutes,
+  activeElapsedMinutes,
   bootBegin,
   bootEnd,
   leaderboard,

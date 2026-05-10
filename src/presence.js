@@ -69,7 +69,6 @@ async function handlePresence(presence) {
           try {
             await member.roles.add(role, `Started playing ${activity.name}`);
             console.log(`+ ${member.user.tag} → ${role.name}`);
-            logActivity(guildId, activity.name);
             await sendMonitoring(`➕ **Role added** – \`${role.name}\` assigned to ${member.user.tag} (${member.id}) for playing \`${activity.name}\``);
             if (wasRoleEmpty) {
               await startRoleTimer(guild, role, targetRoleName);
@@ -137,7 +136,6 @@ async function handlePresence(presence) {
           try {
             await member.roles.add(role, `Started playing ${activity.name}`);
             console.log(`+ ${member.user.tag} → ${role.name}`);
-            logActivity(guildId, activity.name);
             await sendMonitoring(`➕ **Role added** – \`${role.name}\` assigned to ${member.user.tag} (${member.id}) for playing \`${activity.name}\``);
             if (wasRoleEmpty) {
               await startRoleTimer(guild, role, targetRoleName);

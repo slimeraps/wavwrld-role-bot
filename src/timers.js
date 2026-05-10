@@ -3,10 +3,11 @@ const { sleep, stripTimerPrefix } = require("./util");
 const { sendMonitoring } = require("./monitoring");
 const client = require("./client");
 const { roleMap } = require("./state");
+const tracker = require("./tracker");
 
 const TIMER_RENAME_GAP_MS = 2000;
 
-const timers = {};                    // guildId -> { roleId: { originalName, startTime, lastPrefixMinutes } }
+const timers = {};                    // guildId -> { roleId: { originalName, lastPrefixMinutes } }
 let timersEnabled = false;
 let timerRenameQueue = Promise.resolve();
 let lastTimerRenameAt = 0;
@@ -29,9 +30,9 @@ async function startRoleTimer(guild, role, originalName) {
   if (!timers[guildId]) timers[guildId] = {};
   if (timers[guildId][role.id]) return;
 
-  const startTime = Date.now();
-  const newName = `[0m] ${originalName}`;
-  timers[guildId][role.id] = { originalName, startTime, lastPrefixMinutes: -1 };
+  const elapsedMinutes = getRoleTimerMinutes(guildId, role, originalName);
+  const newName = `[${elapsedMinutes}m] ${originalName}`;
+  timers[guildId][role.id] = { originalName, lastPrefixMinutes: -1 };
 
   if (config.dryRun) {
     console.log(`[DRY RUN] Would start timer for role "${role.name}" -> "${newName}"`);
@@ -40,7 +41,7 @@ async function startRoleTimer(guild, role, originalName) {
     try {
       await throttleTimerRename();
       await role.setName(newName, "Timer started");
-      timers[guildId][role.id].lastPrefixMinutes = 0;
+      timers[guildId][role.id].lastPrefixMinutes = elapsedMinutes;
       console.log(`Timer started for role "${originalName}"`);
       await sendMonitoring(`⏱️ **Timer started** for role \`${originalName}\` – renamed to \`${newName}\``);
     } catch (err) {
@@ -75,22 +76,35 @@ async function stopRoleTimer(guild, role) {
   }
 }
 
+function getRoleTimerMinutes(guildId, role, roleName) {
+  const memberIds = [...role.members.values()]
+    .filter((member) => !member.user.bot)
+    .map((member) => member.id);
+  return tracker.activeElapsedMinutes(guildId, "game", roleName, memberIds);
+}
+
 async function updateRoleTimers() {
-  const now = Date.now();
   for (const guildId of Object.keys(timers)) {
     const guild = client.guilds.cache.get(guildId);
     if (!guild) continue;
     for (const roleId of Object.keys(timers[guildId])) {
       const timer = timers[guildId][roleId];
-      const elapsedMinutes = Math.floor((now - timer.startTime) / 60000);
-      if (elapsedMinutes === timer.lastPrefixMinutes) continue;
-
-      const targetName = `[${elapsedMinutes}m] ${timer.originalName}`;
       const role = guild.roles.cache.get(roleId);
       if (!role) {
         delete timers[guildId][roleId];
         continue;
       }
+
+      const humanCount = role.members.filter((member) => !member.user.bot).size;
+      if (humanCount === 0) {
+        await stopRoleTimer(guild, role);
+        continue;
+      }
+
+      const elapsedMinutes = getRoleTimerMinutes(guildId, role, timer.originalName);
+      if (elapsedMinutes === timer.lastPrefixMinutes) continue;
+
+      const targetName = `[${elapsedMinutes}m] ${timer.originalName}`;
 
       if (config.dryRun) {
         console.log(`[DRY RUN] Timer tick for role ${role.name} -> ${targetName}`);
