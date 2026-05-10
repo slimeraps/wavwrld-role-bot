@@ -12,11 +12,15 @@ let player = null;
 
 async function initMusic(client) {
   const { Player } = require("discord-player");
-  const { DefaultExtractors } = require("@discord-player/extractor");
+  const { DefaultExtractors, SoundCloudExtractor } = require("@discord-player/extractor");
   const { YoutubeExtractor } = await import("discord-player-youtubei");
 
   player = new Player(client);
-  await player.extractors.loadMulti(DefaultExtractors);
+  // SoundCloud's extractor hijacks free-text searches and returns a stream
+  // discord-player can't actually play, causing the queue to "finish" the
+  // moment the bot joins VC. Drop it before loading the rest.
+  const extractors = DefaultExtractors.filter((e) => e !== SoundCloudExtractor);
+  await player.extractors.loadMulti(extractors);
   await player.extractors.register(YoutubeExtractor, {});
 
   player.events.on("playerStart", (queue, track) => {

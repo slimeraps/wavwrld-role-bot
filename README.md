@@ -1,9 +1,17 @@
-# WAV Bot — 9.4 (Music Integration)
+# WAV Bot — 9.5 (Music Integration)
 
-9.4 keeps everything from 9.3 (voice roles, member panel, stats) and lands
-the music module as a fully working feature: the 9.3 intermittent playback
-failures are gone, and `!cleanup` no longer restarts the process so it
-doesn't kick the music player.
+9.5 actually removes SoundCloud from the extractor list (9.4's changelog
+claimed this but only edited docs). With SoundCloud gone, free-text searches
+and Spotify-resolved tracks no longer get hijacked into an unplayable stream
+that made the queue "finish" the moment the bot joined VC.
+
+## 9.5 changelog
+
+**Music actually plays:**
+- `SoundCloudExtractor` is now filtered out of `DefaultExtractors` before
+  `player.extractors.loadMulti(...)` in [src/music.js](src/music.js). YouTube
+  URLs, Spotify URLs (resolved via metadata → YouTube), and free-text
+  searches play reliably again.
 
 ## 9.4 changelog
 
