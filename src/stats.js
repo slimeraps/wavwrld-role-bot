@@ -14,9 +14,33 @@ function displayNameFor(guild, userId) {
   return `user ${userId.slice(-4)}`;
 }
 
-function sendImage(ctx, buffer, name) {
-  const attachment = new AttachmentBuilder(buffer, { name });
-  return ctx.reply({ files: [attachment], allowedMentions: { parse: [] } });
+function isTransientNetworkError(err) {
+  const msg = String(err?.message || "");
+  const code = err?.code || "";
+  return /other side closed|aborted|ECONNRESET|UND_ERR_SOCKET/i.test(msg)
+    || code === "ECONNRESET" || code === "UND_ERR_SOCKET";
+}
+
+async function sendImage(ctx, buffer, name) {
+  const payload = {
+    files: [new AttachmentBuilder(buffer, { name })],
+    allowedMentions: { parse: [] },
+  };
+  try {
+    return await ctx.reply(payload);
+  } catch (err) {
+    if (!isTransientNetworkError(err)) throw err;
+    // One retry. Discord's edge occasionally closes the upload socket mid-flight;
+    // a fresh attempt on a new connection almost always succeeds.
+    console.warn(`[stats] upload glitched (${err.message}), retrying once…`);
+    try {
+      return await ctx.followUp(payload);
+    } catch (err2) {
+      // If the interaction itself is wedged, fall through to a plain channel send.
+      if (ctx.channel) return ctx.channel.send(payload);
+      throw err2;
+    }
+  }
 }
 
 // /stats default — top members in the last 30 days
@@ -184,7 +208,12 @@ async function statsCmd(ctx, { category, period } = {}) {
     return await runUsersDefault(ctx, guild);
   } catch (err) {
     console.error("[stats] render error:", err);
-    return ctx.reply(`❌ Failed to render stats: ${err.message}`);
+    // The original interaction may be wedged at this point (deferReply ok but
+    // editReply already errored), so prefer followUp / channel.send — both
+    // open fresh connections and don't depend on the original webhook state.
+    const msg = `❌ Failed to render stats: ${err.message}`;
+    try { return await ctx.followUp(msg); } catch {}
+    try { if (ctx.channel) return await ctx.channel.send(msg); } catch {}
   }
 }
 
