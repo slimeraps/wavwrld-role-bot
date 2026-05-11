@@ -1,5 +1,5 @@
 const { config, premadeRoleIdsSet } = require("./config");
-const { roleMap, autoManaged, promotedRoles, activityStats, openSessions, saveData } = require("./state");
+const { roleMap, autoManaged, promotedRoles, activityStats, openSessions, unknownActivities, saveData } = require("./state");
 const {
   ensurePlayingPrefix,
   getTargetRoleName,
@@ -96,6 +96,7 @@ async function auditGuild(guild) {
     }
   }
   for (const activityName of Object.keys(activityStats[guildId] || {})) observedActivities.add(activityName);
+  for (const activityName of Object.keys(unknownActivities[guildId] || {})) observedActivities.add(activityName);
   for (const session of Object.values(openSessions[guildId] || {})) {
     if (session.type === "game" && session.key) observedActivities.add(session.key);
   }

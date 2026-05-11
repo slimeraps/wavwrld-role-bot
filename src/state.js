@@ -17,6 +17,7 @@ const playtimeResets = {};     // guildId -> { daily: ts, weekly: ts }
 const playtimeHistory = {};    // guildId -> [{ period, endedAt, byType: { type: [{ key, minutes }, ...] } }]
 const voiceChannelNames = {};  // guildId -> { channelId: "last seen name" } (for rendering after rename/delete)
 const statsEmbeds = {};        // guildId -> messageId of the live activity embed (so edits survive restarts)
+const unknownActivities = {};  // guildId -> { activityName: { count, firstSeenAt, lastSeenAt, lastSeenByTag, lastSeenById, type } }
 
 if (fs.existsSync(ROLES_FILE)) {
   try {
@@ -30,6 +31,7 @@ if (fs.existsSync(ROLES_FILE)) {
       if (Array.isArray(guildData.playtimeHistory)) playtimeHistory[guildId] = guildData.playtimeHistory;
       if (typeof guildData.voiceChannelNames === "object") voiceChannelNames[guildId] = guildData.voiceChannelNames;
       if (typeof guildData.statsEmbedMessageId === "string") statsEmbeds[guildId] = guildData.statsEmbedMessageId;
+      if (typeof guildData.unknownActivities === "object") unknownActivities[guildId] = guildData.unknownActivities;
       if (guildData.roles) {
         roleMap[guildId] = guildData.roles;
         autoManaged[guildId] = new Set(guildData.auto || []);
@@ -59,6 +61,7 @@ function buildSnapshot() {
     ...Object.keys(playtime),
     ...Object.keys(openSessions),
     ...Object.keys(statsEmbeds),
+    ...Object.keys(unknownActivities),
   ]);
   for (const guildId of allGuildIds) {
     out[guildId] = {
@@ -74,6 +77,7 @@ function buildSnapshot() {
       playtimeResets: playtimeResets[guildId] || {},
       playtimeHistory: playtimeHistory[guildId] || [],
       voiceChannelNames: voiceChannelNames[guildId] || {},
+      unknownActivities: unknownActivities[guildId] || {},
     };
     if (statsEmbeds[guildId]) out[guildId].statsEmbedMessageId = statsEmbeds[guildId];
     if (guildVolumes[guildId] != null) out[guildId].volume = guildVolumes[guildId];
@@ -129,6 +133,7 @@ module.exports = {
   playtimeHistory,
   voiceChannelNames,
   statsEmbeds,
+  unknownActivities,
   saveData,
   scheduleSave,
   flushPendingSave,

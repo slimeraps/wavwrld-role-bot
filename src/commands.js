@@ -5,6 +5,7 @@ const { handleCleanupCmd, cleanupAndResync } = require("./cleanup");
 const m = require("./music");
 const { statsCmd } = require("./stats");
 const { doctorCmd } = require("./doctor");
+const { unknownCmd } = require("./unknown");
 
 function ctxFromMessage(message) {
   return {
@@ -191,6 +192,26 @@ const COMMANDS = [
     parseText: (args) => ({ fix: args.some((arg) => ["fix", "--fix", "true", "yes"].includes(String(arg).toLowerCase())) }),
     parseSlash: (i) => ({ fix: !!i.options.getBoolean("fix") }),
     handler: doctorCmd,
+  },
+  {
+    name: "unknown",
+    description: "Owner-only: show or clear unmapped activity observations",
+    needsOwner: true,
+    options: [
+      {
+        name: "action",
+        type: ApplicationCommandOptionType.String,
+        required: false,
+        description: "List or clear the inbox",
+        choices: [
+          { name: "list", value: "list" },
+          { name: "clear", value: "clear" },
+        ],
+      },
+    ],
+    parseText: (args) => ({ action: String(args[0] || "list").toLowerCase() }),
+    parseSlash: (i) => ({ action: i.options.getString("action") || "list" }),
+    handler: unknownCmd,
   },
   {
     name: "premade",

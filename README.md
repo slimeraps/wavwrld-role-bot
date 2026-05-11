@@ -1,9 +1,11 @@
-# WAV Bot — 10.0 (Role Doctor and activity aliases)
+# WAV Bot — 10.0 (Role Doctor, aliases, and Unknown Activity Inbox)
 
 10.0 adds an owner-only Role Doctor plus activity aliases so mismatched
 presence names can resolve to the right premade role instead of creating
-duplicates. It also keeps the 9.7 live activity embed work: 9.7 ended the
-`[Xh Ym] Playing Foo` role-name prefix experiment. Discord
+duplicates. It also adds an Unknown Activity Inbox so unmapped presence
+names are visible before they become cleanup work. The 9.7 live activity
+embed work remains: 9.7 ended the `[Xh Ym] Playing Foo` role-name prefix
+experiment. Discord
 caps role renames at ~2 per 10 min per role, so encoding a ticking timer
 in the role name was fundamentally rate-limited — every minute tick
 risked stalling and every restart doubled the rename load. The live
@@ -31,6 +33,14 @@ shows time per activity, member count, and who is in it.
   and premade role IDs. For example, `GitHub`, `Github`, and
   `Playing GitHub` can all resolve to the same premade `Playing Github`
   role instead of creating duplicates.
+
+**Unknown Activity Inbox:**
+- New owner-only `/unknown` command lists unmapped activity names the bot
+  has observed, with observation count, last seen member, and a suggested
+  role name.
+- `/unknown action:clear` clears the inbox after the items have been
+  mapped, blacklisted, or intentionally ignored.
+- Text command support works too: `!unknown` and `!unknown clear`.
 
 ## 9.7.4 changelog
 
@@ -431,6 +441,10 @@ config flag, persists it, and runs a full cleanup + resync.
 That is useful when Discord reports a different spelling/casing than the
 role config, such as `GitHub` vs `Github`.
 
+Unmapped activities are recorded in the Unknown Activity Inbox, available
+with `/unknown` or `!unknown` for the owner. Use `/unknown action:clear`
+after mapping or blacklisting the entries you care about.
+
 ### Voice channel roles
 
 [src/voice.js](src/voice.js) gives each voice channel its own role. When a
@@ -529,6 +543,7 @@ across cleanup so memory survives the restart.
 | `/play`, `/skip`, `/pause`, `/resume`, `/stop`, `/queue`, `/nowplaying`, `/volume` | VIP role | Music player. |
 | `/cleanup` | owner | Full resync of all managed roles. |
 | `/doctor` | owner | Audit duplicate/stale role state; `fix:true` repairs safe items. |
+| `/unknown` | owner | Show unmapped observed activities; `action:clear` clears the inbox. |
 | `/premade` | owner | Toggle `onlyUsePremadeRoles` and resync. |
 
 Owner is `config.ownerId`; VIP role is `config.vipRoleId`. Owner-only
@@ -576,6 +591,8 @@ Env vars: `DISCORD_TOKEN`, `STATS_CHANNEL_ID`, `PANEL_TOKEN`, `PANEL_PORT`
   reposition)
 - `src/cleanup.js` — `cleanup` and `premade` resync logic; also drops orphan
   voice roles
+- `src/doctor.js` — owner-only role audit and safe repair helpers
+- `src/unknown.js` — Unknown Activity Inbox recorder and owner command
 - `src/music.js` — music player init, queue commands, reaction picker
 - `src/stats.js` — `logActivity()` counters and the `/stats` embed
 - `src/panel.js` — token-gated HTTP server with `/api/members` snapshot

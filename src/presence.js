@@ -4,6 +4,7 @@ const { sendMonitoring } = require("./monitoring");
 const { roleMap, autoManaged, promotedRoles, voiceChannelRoles, saveData } = require("./state");
 const { humanMemberCount } = require("./timers");
 const { checkPromotedRolesEmpty } = require("./promotion");
+const { recordUnknownActivity } = require("./unknown");
 const tracker = require("./tracker");
 
 async function handlePresence(presence) {
@@ -28,14 +29,16 @@ async function handlePresence(presence) {
   let hasUnmatchedActivity = false;
 
   for (const activity of presence.activities) {
-    if (activity.type !== 0) {
-      if (!hasActivityConfig(activity.name)) continue;
-    }
+    if (!activity?.name) continue;
 
     if (blacklist.has(activity.name.toLowerCase())) {
       console.log(`Skipping blacklisted activity: "${activity.name}"`);
       continue;
     }
+
+    const hasConfig = hasActivityConfig(activity.name);
+    if (!hasConfig) recordUnknownActivity(guildId, activity, member);
+    if (activity.type !== 0 && !hasConfig) continue;
 
     let role = null;
     let targetRoleName = null;
