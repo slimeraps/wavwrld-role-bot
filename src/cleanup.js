@@ -270,7 +270,6 @@ async function handleCleanupCmd(ctx) {
           }
         }
       }
-      await stopRoleTimer(guild, role);
     }
 
     if (config.fallbackRoleId) {
