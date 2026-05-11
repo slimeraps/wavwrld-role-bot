@@ -8,6 +8,20 @@ activity surface now lives in a single auto-updating embed in a dedicated
 stats channel. Roles stay named cleanly (`Playing Rust`), and the embed
 shows time per activity, member count, and who is in it.
 
+## 9.7.4 changelog
+
+**`/help` (`!help`) covers every non-owner command:**
+- The help text used to only describe music commands. Now it covers
+  the whole public surface — `/help` and `/stats` (open to everyone)
+  plus the VIP-gated music commands grouped into Playback and Queue
+  sections.
+- Each entry lists both the slash form and the text aliases so users
+  can pick whichever they prefer.
+- Owner-only commands (`/cleanup`, `/premade`) are deliberately
+  omitted.
+- Slash command description updated from "Show how to use the music
+  commands" to "Show how to use every (non-owner) command".
+
 ## 9.7.3 changelog
 
 **HTTP panel switched to live activity view:**

@@ -48,30 +48,37 @@ function ctxFromInteraction(interaction) {
   return ctx;
 }
 
-const MUSIC_HELP_TEXT = [
-  "🎵 **Music — how to use the bot**",
+const HELP_TEXT = [
+  "🤖 **WAV Bot — command reference**",
+  "Every command works as either slash (`/play`) or text (`!play`).",
   "",
-  "All music commands require the **VIP** role and work as either slash (`/play`) or text (`!play`).",
+  "**📊 Open to everyone**",
+  "• `/help` (`!help`, `!h`) — show this message",
+  "• `/stats` (`!stats`, `!leaderboard`, `!lb`) — top members in the last 30 days, voice + game time, with each member's top game",
   "",
-  "**Playback**",
-  "• `/play <url-or-search>` — joins your voice channel and queues a YouTube/Spotify/SoundCloud URL or search query",
-  "• `/pause` / `/resume` — pause and resume the current track",
-  "• `/skip` — skip the current track",
-  "• `/stop` — stop, clear the queue, and leave the voice channel",
+  "**🎵 Music — requires the VIP role**",
+  "_Join a voice channel first — the bot follows whoever ran the command._",
   "",
-  "**Queue**",
-  "• `/queue` — list upcoming tracks",
-  "• `/nowplaying` — show the current track with a progress bar",
-  "• `/volume [0-200]` — set or show volume",
+  "Playback",
+  "• `/play <url-or-search>` (`!play`, `!p`) — queue a YouTube / Spotify / SoundCloud URL or search query",
+  "• `/pause` — pause the current track",
+  "• `/resume` — resume the current track",
+  "• `/skip` (`!s`) — skip the current track",
+  "• `/stop` (`!leave`) — stop, clear the queue, leave the voice channel",
+  "",
+  "Queue",
+  "• `/queue` (`!q`) — list upcoming tracks",
+  "• `/nowplaying` (`!np`) — show the current track with a progress bar",
+  "• `/volume [0-200]` (`!vol`) — set or show volume",
   "",
   "**Notes**",
-  "• Join a voice channel first — the bot follows whoever ran the command",
-  "• Spotify links work by resolving title/artist to the YouTube equivalent (Spotify doesn't allow third-party streaming)",
-  "• The bot auto-leaves after 60 seconds of an empty queue or empty voice channel",
+  "• Spotify links work by resolving title/artist to the YouTube equivalent (Spotify doesn't allow third-party streaming).",
+  "• The bot auto-leaves after 60 seconds of an empty queue or empty voice channel.",
+  "• Live activity (who's playing what, for how long) shows in the dedicated stats channel and on the HTTP panel — no command needed.",
 ].join("\n");
 
 async function helpCmd(ctx) {
-  await ctx.reply(MUSIC_HELP_TEXT);
+  await ctx.reply(HELP_TEXT);
 }
 
 async function premadeCmd(ctx) {
@@ -93,7 +100,7 @@ async function premadeCmd(ctx) {
 const COMMANDS = [
   {
     name: "help",
-    description: "Show how to use the music commands",
+    description: "Show how to use every (non-owner) command",
     aliases: ["h"],
     handler: helpCmd,
   },
