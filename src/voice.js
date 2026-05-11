@@ -4,6 +4,7 @@ const { voiceRoleNameForChannel } = require("./util");
 const { sendMonitoring } = require("./monitoring");
 const { roleMap, autoManaged, promotedRoles, voiceChannelRoles, saveData } = require("./state");
 const tracker = require("./tracker");
+const { renameRoleThrottled } = require("./timers");
 
 const VOICE_CHANNEL_TYPES = new Set([ChannelType.GuildVoice, ChannelType.GuildStageVoice]);
 const VOICE_ROLE_COLOR = 0xffa6c9;
@@ -113,7 +114,7 @@ async function ensureVoiceRoleForChannel(guild, channel) {
         if (config.dryRun) {
           console.log(`[DRY RUN] Would rename voice role "${oldName}" -> "${desiredName}"`);
         } else {
-          await role.setName(desiredName, "Voice channel renamed");
+          await renameRoleThrottled(role, desiredName, "Voice channel renamed");
           console.log(`Renamed voice role "${oldName}" -> "${desiredName}"`);
         }
       } catch (err) {

@@ -41,6 +41,28 @@ function throttleTimerRename() {
   return next;
 }
 
+// Discord enforces a per-role rename rate limit (~2 per 10 min); discord.js
+// silently queues and waits when hit, which can lock up the bot. Cap each
+// rename so a stuck request surfaces as an error instead of a hang.
+const ROLE_RENAME_TIMEOUT_MS = 30000;
+async function renameRoleThrottled(role, newName, reason) {
+  await throttleTimerRename();
+  let timer;
+  try {
+    await Promise.race([
+      role.setName(newName, reason),
+      new Promise((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`Role rename timed out after ${ROLE_RENAME_TIMEOUT_MS}ms (likely Discord per-role rate limit)`)),
+          ROLE_RENAME_TIMEOUT_MS,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 async function startRoleTimer(guild, role, originalName) {
   if (!timersEnabled) return;
   const guildId = guild.id;
@@ -56,8 +78,7 @@ async function startRoleTimer(guild, role, originalName) {
     await sendMonitoring(`[DRY RUN] Timer started for role \`${role.name}\` -> \`${newName}\``);
   } else {
     try {
-      await throttleTimerRename();
-      await role.setName(newName, "Timer started");
+      await renameRoleThrottled(role, newName, "Timer started");
       timers[guildId][role.id].lastPrefixMinutes = elapsedMinutes;
       console.log(`Timer started for role "${originalName}"`);
       await sendMonitoring(`Timer started for role \`${originalName}\` - renamed to \`${newName}\``);
@@ -85,8 +106,7 @@ async function stopRoleTimer(guild, role) {
   } else {
     try {
       const oldName = role.name;
-      await throttleTimerRename();
-      await role.setName(originalName, "Timer stopped (role empty)");
+      await renameRoleThrottled(role, originalName, "Timer stopped (role empty)");
       console.log(`Timer stopped for role "${originalName}"`);
       await sendMonitoring(`Timer stopped for role \`${originalName}\` - renamed back from \`${oldName}\``);
     } catch (err) {
@@ -165,8 +185,7 @@ async function updateRoleTimers() {
         timer.lastPrefixMinutes = elapsedMinutes;
       } else {
         try {
-          await throttleTimerRename();
-          await role.setName(targetName, `Timer tick ${formatTimerMinutes(elapsedMinutes)}`);
+          await renameRoleThrottled(role, targetName, `Timer tick ${formatTimerMinutes(elapsedMinutes)}`);
           console.log(`Timer tick for role ${timer.originalName}: [${formatTimerMinutes(elapsedMinutes)}]`);
           await sendMonitoring(`Timer tick - \`${timer.originalName}\` renamed to \`${targetName}\``);
           timer.lastPrefixMinutes = elapsedMinutes;
@@ -195,8 +214,7 @@ async function initRoleTimersForGuild(guild) {
         await sendMonitoring(`[DRY RUN] Would clean role name: \`${role.name}\` -> \`${cleanName}\``);
       } else {
         try {
-          await throttleTimerRename();
-          await role.setName(cleanName, "Cleaning prefix on startup");
+          await renameRoleThrottled(role, cleanName, "Cleaning prefix on startup");
           console.log(`Cleaned role name from "${role.name}" to "${cleanName}"`);
           await sendMonitoring(`Cleaned role name: \`${role.name}\` -> \`${cleanName}\``);
         } catch (err) {
@@ -225,4 +243,5 @@ module.exports = {
   humanMemberCount,
   formatTimerMinutes,
   enableTimers,
+  renameRoleThrottled,
 };

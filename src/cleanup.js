@@ -5,7 +5,7 @@ const client = require("./client");
 const { roleMap, autoManaged, promotedRoles, originalPositions, voiceChannelRoles, saveData } = require("./state");
 const { handlePresence } = require("./presence");
 const { initVoiceRolesForGuild } = require("./voice");
-const { stopRoleTimer } = require("./timers");
+const { stopRoleTimer, renameRoleThrottled } = require("./timers");
 
 function isBotCreatedManagedRole(guildId, roleId, roleName) {
   if (!roleId || premadeRoleIdsSet.has(roleId)) return false;
@@ -332,9 +332,10 @@ async function handleCleanupCmd(ctx) {
         await sendMonitoring(`🧹 [DRY RUN] Cleanup rename: \`${role.name}\` → \`${cleanName}\``);
       } else {
         try {
-          await role.setName(cleanName, "Cleanup command – restoring original name");
-          console.log(`Cleanup: renamed "${role.name}" to "${cleanName}"`);
-          await sendMonitoring(`🧹 **Cleanup rename** – \`${role.name}\` → \`${cleanName}\``);
+          const oldName = role.name;
+          await renameRoleThrottled(role, cleanName, "Cleanup command – restoring original name");
+          console.log(`Cleanup: renamed "${oldName}" to "${cleanName}"`);
+          await sendMonitoring(`🧹 **Cleanup rename** – \`${oldName}\` → \`${cleanName}\``);
           await sleep(renameDelay);
         } catch (err) {
           console.error(`Failed to rename premade role ${role.id}:`, err.message);
