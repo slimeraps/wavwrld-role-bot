@@ -7,6 +7,18 @@ variants. They were clutter and rarely used — only the default 30-day
 underlying machinery can be brought back if we ever want it, but no
 command is wired to them.
 
+## 9.6.5 changelog
+
+**Bot-created role deletion:**
+- Empty managed roles are now deleted through a shared safety helper that
+  only targets roles tracked in `roleMap` / `autoManaged`.
+- Premade roles are never deleted by this path because role IDs listed in
+  `premadeRoleIds` are skipped before any delete call can run.
+- Member role removals now check removed role IDs directly, so timer
+  prefixes and renamed role displays no longer prevent cleanup.
+- External role deletion cleanup now untracks managed roles by role ID
+  instead of relying on the current displayed role name.
+
 ## 9.6.4 changelog
 
 **Role timer display:**

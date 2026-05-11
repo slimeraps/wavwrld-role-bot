@@ -7,7 +7,7 @@ const tracker = require("./tracker");
 const { initRoleTimersForGuild, enableTimers } = require("./timers");
 const { promoteRole, unpromoteRole, checkPromotedRolesEmpty } = require("./promotion");
 const { handlePresence } = require("./presence");
-const { cleanupEmptyManagedRoles } = require("./cleanup");
+const { cleanupEmptyManagedRoles, deleteEmptyBotCreatedRole, untrackManagedRole } = require("./cleanup");
 const { initMusic } = require("./music");
 const { dispatchText, dispatchSlash, registerSlashCommands, NAME_INDEX } = require("./commands");
 const {
@@ -168,10 +168,9 @@ function register() {
 
     const voicePruned = pruneVoiceRoleId(guildId, role.id);
 
-    const managed = autoManaged[guildId];
-    if (managed && managed.has(role.name) && roleMap[guildId]?.[role.name] === role.id) {
-      managed.delete(role.name);
-      delete roleMap[guildId][role.name];
+    const wasManaged = Object.entries(roleMap[guildId] || {}).some(([, roleId]) => roleId === role.id);
+    if (wasManaged) {
+      untrackManagedRole(guildId, role.id, role.name);
       console.log(`Managed role "${role.name}" was deleted externally – removed from tracking`);
       await sendMonitoring(`🗑️ **External deletion** – Managed role \`${role.name}\` was deleted in **${role.guild.name}** – removed from tracking.`);
       if (!config.dryRun) saveData();
@@ -203,14 +202,24 @@ function register() {
       }
     }
 
-    let removedAny = false;
+    const removedRoleIds = [];
     for (const roleId of oldRoleIds) {
       if (!newRoleIds.has(roleId)) {
-        removedAny = true;
-        break;
+        removedRoleIds.push(roleId);
       }
     }
-    if (removedAny) {
+
+    for (const roleId of removedRoleIds) {
+      const managedRoleNames = Object.entries(roleMap[newMember.guild.id] || {})
+        .filter(([, mappedRoleId]) => mappedRoleId === roleId)
+        .map(([roleName]) => roleName);
+
+      for (const roleName of managedRoleNames) {
+        await deleteEmptyBotCreatedRole(newMember.guild, roleId, roleName, "No members left", newMember.id);
+      }
+    }
+
+    if (removedRoleIds.length > 0) {
       await checkPromotedRolesEmpty(newMember.guild);
     }
   });

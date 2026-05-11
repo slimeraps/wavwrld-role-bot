@@ -7,6 +7,56 @@ const { handlePresence } = require("./presence");
 const { initVoiceRolesForGuild } = require("./voice");
 const { stopRoleTimer } = require("./timers");
 
+function isBotCreatedManagedRole(guildId, roleId, roleName) {
+  if (!roleId || premadeRoleIdsSet.has(roleId)) return false;
+  if (!autoManaged[guildId]?.has(roleName)) return false;
+  return roleMap[guildId]?.[roleName] === roleId;
+}
+
+function untrackManagedRole(guildId, roleId, roleName = null) {
+  for (const [name, id] of Object.entries(roleMap[guildId] || {})) {
+    if (id !== roleId) continue;
+    delete roleMap[guildId][name];
+    autoManaged[guildId]?.delete(name);
+  }
+  if (roleName) autoManaged[guildId]?.delete(roleName);
+}
+
+async function deleteEmptyBotCreatedRole(guild, roleId, roleName, reason, excludeMemberId = null) {
+  const guildId = guild.id;
+  if (!config.autoDeleteUnusedRoles) return false;
+  if (!isBotCreatedManagedRole(guildId, roleId, roleName)) return false;
+
+  const role = guild.roles.cache.get(roleId);
+  if (!role) {
+    untrackManagedRole(guildId, roleId, roleName);
+    if (!config.dryRun) saveData();
+    return false;
+  }
+  if (role.members.some((member) => !member.user.bot && member.id !== excludeMemberId)) return false;
+
+  await stopRoleTimer(guild, role);
+
+  if (config.dryRun) {
+    console.log(`[DRY RUN] Would delete empty bot-created role "${role.name}"`);
+    await sendMonitoring(`[DRY RUN] Would delete empty bot-created role \`${role.name}\``);
+    return true;
+  }
+
+  try {
+    await role.delete(reason);
+    untrackManagedRole(guildId, roleId, roleName);
+    saveData();
+    console.log(`Deleted empty bot-created role "${roleName}"`);
+    await sendMonitoring(`Deleted empty bot-created role \`${role.name}\``);
+    return true;
+  } catch (err) {
+    console.error(`Failed to delete empty role "${roleName}":`, err.message);
+    await sendMonitoring(`Failed to delete empty role \`${role.name}\`: ${err.message}`);
+    return false;
+  }
+}
+
 async function cleanupEmptyManagedRoles(guild) {
   if (!config.autoDeleteUnusedRoles) return;
   const guildId = guild.id;
@@ -15,39 +65,11 @@ async function cleanupEmptyManagedRoles(guild) {
 
   const protectedRoles = config.protectedRoles || [];
 
-  for (const roleName of managed) {
+  for (const roleName of [...managed]) {
     if (protectedRoles.includes(roleName)) continue;
     const roleId = roleMap[guildId]?.[roleName];
     if (!roleId) continue;
-
-    const role = guild.roles.cache.get(roleId);
-    if (!role) {
-      managed.delete(roleName);
-      delete roleMap[guildId][roleName];
-      continue;
-    }
-
-    if (premadeRoleIdsSet.has(role.id)) continue;
-
-    if (role.members.size === 0) {
-      console.log(`Role "${roleName}" is empty – deleting`);
-      await sendMonitoring(`🧹 **Auto-cleanup** – Deleting empty role \`${role.name}\` in **${guild.name}** (${guild.id})`);
-      if (config.dryRun) {
-        console.log(`[DRY RUN] Would delete role "${roleName}"`);
-        await sendMonitoring(`[DRY RUN] Would delete role \`${role.name}\``);
-      } else {
-        try {
-          await role.delete(`Auto‑cleanup: no members left`);
-          managed.delete(roleName);
-          delete roleMap[guildId][roleName];
-          saveData();
-          await sendMonitoring(`✅ **Deleted** empty role \`${role.name}\``);
-        } catch (err) {
-          console.error(`Failed to delete role "${roleName}":`, err.message);
-          await sendMonitoring(`❌ Failed to delete empty role \`${role.name}\`: ${err.message}`);
-        }
-      }
-    }
+    await deleteEmptyBotCreatedRole(guild, roleId, roleName, "Auto-cleanup: no members left");
   }
 }
 
@@ -332,4 +354,12 @@ async function handleCleanupCmd(ctx) {
   await ctx.followUp("✅ Roles re-applied based on current presences and voice states.");
 }
 
-module.exports = { cleanupEmptyManagedRoles, resyncAllMembers, cleanupAndResync, handleCleanupCmd };
+module.exports = {
+  cleanupEmptyManagedRoles,
+  deleteEmptyBotCreatedRole,
+  resyncAllMembers,
+  cleanupAndResync,
+  handleCleanupCmd,
+  isBotCreatedManagedRole,
+  untrackManagedRole,
+};
