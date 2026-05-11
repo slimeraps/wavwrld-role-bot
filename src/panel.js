@@ -1,5 +1,6 @@
 const http = require("http");
 const crypto = require("crypto");
+const { collectRows } = require("./stats-channel");
 
 function safeEqual(a, b) {
   if (typeof a !== "string" || typeof b !== "string") return false;
@@ -9,66 +10,37 @@ function safeEqual(a, b) {
   return crypto.timingSafeEqual(ab, bb);
 }
 
-function statusOf(presence) {
-  if (!presence) return "offline";
-  return presence.status || "offline";
-}
-
-function activitiesOf(presence) {
-  if (!presence) return [];
-  return presence.activities.map((a) => ({
-    type: a.type,
-    name: a.name,
-    details: a.details || null,
-    state: a.state || null,
-    emoji: a.emoji ? a.emoji.name : null,
-  }));
-}
+const SECTIONS = [
+  { key: "playing", title: "Playing", emoji: "🎮" },
+  { key: "voice", title: "Voice", emoji: "🎤" },
+  { key: "listening", title: "Listening", emoji: "🎵" },
+  { key: "watching", title: "Watching", emoji: "📺" },
+  { key: "other", title: "Other", emoji: "🟣" },
+];
 
 function buildSnapshot(client, guildId) {
   const guild = guildId ? client.guilds.cache.get(guildId) : client.guilds.cache.first();
   if (!guild) return { error: "guild_not_found", guildId: guildId || null };
 
-  const voiceByMember = new Map();
-  for (const channel of guild.channels.cache.values()) {
-    if (!channel.isVoiceBased || !channel.isVoiceBased()) continue;
-    for (const [memberId] of channel.members) {
-      voiceByMember.set(memberId, channel.name);
-    }
-  }
-
-  const members = [];
-  for (const member of guild.members.cache.values()) {
-    if (member.user.bot) continue;
-    const status = statusOf(member.presence);
-    if (status === "offline") continue;
-
-    const hoistedRole = member.roles.hoist;
-    const topRole = member.roles.highest;
-
-    members.push({
-      id: member.id,
-      name: member.user.username,
-      displayName: member.displayName,
-      avatar: member.user.displayAvatarURL({ size: 32, extension: "png" }),
-      status,
-      activities: activitiesOf(member.presence),
-      voiceChannel: voiceByMember.get(member.id) || null,
-      hoistRoleId: hoistedRole ? hoistedRole.id : null,
-      hoistRoleName: hoistedRole ? hoistedRole.name : null,
-      hoistRoleColor: hoistedRole && hoistedRole.color ? `#${hoistedRole.color.toString(16).padStart(6, "0")}` : null,
-      hoistRolePosition: hoistedRole ? hoistedRole.position : -1,
-      topRoleColor: topRole && topRole.color ? `#${topRole.color.toString(16).padStart(6, "0")}` : null,
-    });
-  }
+  const rows = collectRows(guild);
+  const sections = SECTIONS.map(({ key, title, emoji }) => ({
+    key,
+    title,
+    emoji,
+    rows: (rows[key] || []).map((r) => ({
+      display: r.display,
+      timeStr: r.timeStr,
+      minutes: r.minutes,
+      count: r.count,
+      memberNames: r.memberNames,
+    })),
+  })).filter((s) => s.rows.length > 0);
 
   return {
     guildId: guild.id,
     guildName: guild.name,
     guildIcon: guild.iconURL({ size: 64, extension: "png" }),
-    memberCount: guild.memberCount,
-    onlineCount: members.length,
-    members,
+    sections,
     fetchedAt: new Date().toISOString(),
   };
 }
@@ -78,245 +50,223 @@ const HTML_PAGE = `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Member Panel</title>
+<title>Live Activity</title>
 <style>
   :root {
     --bg: #1e1f22;
     --panel: #2b2d31;
     --panel-2: #232428;
-    --hover: #35373c;
+    --row-hover: #34363c;
     --text: #dbdee1;
     --muted: #949ba4;
     --dim: #80848e;
-    --accent: #5865f2;
-    --green: #23a55a;
-    --yellow: #f0b232;
-    --red: #f23f42;
-    --gray: #80848e;
+    --accent: #b084f0;
+    --accent-soft: #b084f01a;
+    --time: #f0c674;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; height: 100%; }
   body {
     background: var(--bg);
     color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto, "Helvetica Neue", Arial, sans-serif;
     font-size: 14px;
-    display: flex;
-    justify-content: center;
   }
-  #app {
-    width: 280px;
-    background: var(--panel);
-    height: 100vh;
-    overflow-y: auto;
-    border-left: 1px solid var(--panel-2);
-    border-right: 1px solid var(--panel-2);
+  .wrap {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 28px 24px 60px;
   }
   header {
-    position: sticky; top: 0;
-    background: var(--panel-2);
-    padding: 10px 14px;
-    border-bottom: 1px solid #1f2024;
-    display: flex; align-items: center; gap: 10px;
-    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 22px;
   }
-  header img { width: 24px; height: 24px; border-radius: 50%; }
-  header .title { flex: 1; min-width: 0; }
-  header .title .name { font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  header .title .meta { font-size: 11px; color: var(--muted); }
-  header .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); animation: pulse 2s infinite; }
-  @keyframes pulse { 50% { opacity: 0.4; } }
-  .section-title {
-    font-size: 11px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.4px;
+  header img.icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: var(--panel);
+  }
+  header .titles { line-height: 1.2; }
+  header h1 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+  }
+  header .sub {
     color: var(--muted);
-    padding: 14px 10px 4px;
-  }
-  .member {
-    display: flex; align-items: center; gap: 10px;
-    padding: 4px 10px;
-    border-radius: 4px;
-    margin: 0 6px 1px;
-    cursor: default;
-  }
-  .member:hover { background: var(--hover); }
-  .avatar-wrap { position: relative; flex-shrink: 0; }
-  .avatar-wrap img { width: 28px; height: 28px; border-radius: 50%; display: block; }
-  .status-dot {
-    position: absolute; right: -2px; bottom: -2px;
-    width: 11px; height: 11px; border-radius: 50%;
-    border: 2px solid var(--panel);
-  }
-  .status-online { background: var(--green); }
-  .status-idle   { background: var(--yellow); }
-  .status-dnd    { background: var(--red); }
-  .status-offline { background: var(--gray); }
-  .info { min-width: 0; flex: 1; }
-  .name {
-    font-weight: 500;
-    font-size: 14px;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  .activity {
-    font-size: 11px; color: var(--muted);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    display: flex; align-items: center; gap: 4px;
-  }
-  .activity .pip { font-size: 10px; }
-  .voice { color: #43a25a; }
-  #err {
-    margin: 16px;
-    padding: 10px;
-    background: #3a1f1f; color: #ff8a8a;
-    border-radius: 6px;
-    display: none;
     font-size: 12px;
+    margin-top: 2px;
   }
-  .empty { padding: 30px 10px; text-align: center; color: var(--muted); font-size: 12px; }
-  ::-webkit-scrollbar { width: 8px; }
-  ::-webkit-scrollbar-thumb { background: #1a1b1e; border-radius: 4px; }
-  ::-webkit-scrollbar-track { background: transparent; }
+  .empty {
+    padding: 50px 0;
+    text-align: center;
+    color: var(--muted);
+    font-style: italic;
+  }
+  .err {
+    background: #f23f4220;
+    border: 1px solid #f23f4280;
+    color: #ffb4b4;
+    padding: 10px 14px;
+    border-radius: 6px;
+    margin-bottom: 18px;
+    display: none;
+  }
+  section.section {
+    background: var(--panel);
+    border-radius: 10px;
+    padding: 14px 18px 10px;
+    margin-bottom: 14px;
+    border-left: 3px solid var(--accent);
+  }
+  section.section h2 {
+    margin: 0 0 10px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: max-content 1fr max-content minmax(0, 2fr);
+    column-gap: 22px;
+    row-gap: 2px;
+    align-items: center;
+  }
+  .grid .row {
+    display: contents;
+  }
+  .grid .row > div {
+    padding: 6px 10px;
+    border-radius: 4px;
+  }
+  .grid .row:hover > div {
+    background: var(--row-hover);
+  }
+  .grid .time {
+    font-variant-numeric: tabular-nums;
+    color: var(--time);
+    font-weight: 500;
+    text-align: right;
+    min-width: 64px;
+  }
+  .grid .name {
+    font-weight: 600;
+    color: var(--text);
+  }
+  .grid .count {
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+    min-width: 24px;
+  }
+  .grid .members {
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  footer {
+    text-align: center;
+    color: var(--dim);
+    font-size: 11px;
+    margin-top: 24px;
+  }
 </style>
 </head>
 <body>
-  <div id="app">
-    <header>
-      <img id="g-icon" alt="" />
-      <div class="title">
-        <div class="name" id="g-name">Loading…</div>
-        <div class="meta" id="g-meta"></div>
-      </div>
-      <div class="pulse" title="live"></div>
-    </header>
-    <div id="err"></div>
-    <div id="list"></div>
-  </div>
+<div class="wrap">
+  <header>
+    <img class="icon" id="icon" alt="" />
+    <div class="titles">
+      <h1 id="title">Loading…</h1>
+      <div class="sub" id="sub">—</div>
+    </div>
+  </header>
+  <div class="err" id="err"></div>
+  <div id="root"></div>
+  <footer>updates every 5s · <span id="updated">—</span></footer>
+</div>
 <script>
-(function() {
+(function () {
+  const POLL_MS = 5000;
   const params = new URLSearchParams(location.search);
   const key = params.get('key') || '';
-  const POLL_MS = 5000;
-  const list = document.getElementById('list');
+  const root = document.getElementById('root');
+  const icon = document.getElementById('icon');
+  const title = document.getElementById('title');
+  const sub = document.getElementById('sub');
   const err = document.getElementById('err');
-  const gIcon = document.getElementById('g-icon');
-  const gName = document.getElementById('g-name');
-  const gMeta = document.getElementById('g-meta');
+  const updated = document.getElementById('updated');
 
   function escapeHtml(s) {
-    return String(s == null ? '' : s)
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    return String(s).replace(/[&<>"']/g, (c) => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
   }
 
-  function activityLine(a, voiceChannel) {
-    if (!a) return voiceChannel ? '<span class="voice">🔊 ' + escapeHtml(voiceChannel) + '</span>' : '';
-    let prefix = '';
-    let body = '';
-    switch (a.type) {
-      case 0: prefix = '🎮'; body = a.name; break;
-      case 1: prefix = '📺'; body = 'Streaming ' + a.name; break;
-      case 2: prefix = '🎵'; body = a.details || a.state || a.name; break;
-      case 3: prefix = '📺'; body = 'Watching ' + a.name; break;
-      case 4: {
-        const e = a.emoji ? a.emoji + ' ' : '';
-        body = e + (a.state || '');
-        break;
-      }
-      case 5: prefix = '🏆'; body = 'Competing in ' + a.name; break;
-      default: body = a.name;
-    }
-    let line = (prefix ? prefix + ' ' : '') + escapeHtml(body);
-    if (voiceChannel) line += ' · <span class="voice">In voice</span>';
-    return line;
+  function renderRow(r) {
+    const members = r.memberNames.length > 0 ? r.memberNames.join(', ') : '';
+    return ''
+      + '<div class="row">'
+      +   '<div class="time">' + escapeHtml(r.timeStr) + '</div>'
+      +   '<div class="name">' + escapeHtml(r.display) + '</div>'
+      +   '<div class="count">' + r.count + '</div>'
+      +   '<div class="members" title="' + escapeHtml(members) + '">' + escapeHtml(members) + '</div>'
+      + '</div>';
   }
 
-  function primaryActivity(activities) {
-    if (!activities || !activities.length) return null;
-    const order = [0, 1, 5, 3, 2, 4];
-    for (const t of order) {
-      const a = activities.find(x => x.type === t);
-      if (a) return a;
-    }
-    return activities[0];
-  }
-
-  function groupKey(m) {
-    if (m.hoistRoleId) return 'role:' + m.hoistRoleId;
-    return 'online';
-  }
-
-  function render(snapshot) {
+  function render(data) {
     err.style.display = 'none';
-    if (snapshot.guildIcon) { gIcon.src = snapshot.guildIcon; gIcon.style.display = ''; }
-    else { gIcon.style.display = 'none'; }
-    gName.textContent = snapshot.guildName || '';
-    gMeta.textContent = snapshot.onlineCount + ' online · ' + snapshot.memberCount + ' total';
-
-    const groups = new Map();
-    const groupMeta = new Map();
-    for (const m of snapshot.members) {
-      const k = groupKey(m);
-      if (!groups.has(k)) {
-        groups.set(k, []);
-        groupMeta.set(k, {
-          key: k,
-          title: m.hoistRoleName || 'ONLINE',
-          color: m.hoistRoleColor || null,
-          position: m.hoistRolePosition,
-        });
-      }
-      groups.get(k).push(m);
-    }
-
-    const ordered = [...groupMeta.values()].sort((a, b) => {
-      if (a.key === 'online' && b.key !== 'online') return 1;
-      if (b.key === 'online' && a.key !== 'online') return -1;
-      return b.position - a.position;
-    });
-
-    if (!ordered.length) {
-      list.innerHTML = '<div class="empty">No one is online.</div>';
+    if (data.error) {
+      err.textContent = 'Error: ' + data.error;
+      err.style.display = '';
       return;
     }
 
-    let html = '';
-    for (const meta of ordered) {
-      const ms = groups.get(meta.key);
-      const titleStyle = meta.color ? ' style="color:' + escapeHtml(meta.color) + '"' : '';
-      html += '<div class="section-title"' + titleStyle + '>' + escapeHtml(meta.title) + ' — ' + ms.length + '</div>';
-      for (const m of ms) {
-        const a = primaryActivity(m.activities);
-        const nameStyle = m.topRoleColor ? ' style="color:' + escapeHtml(m.topRoleColor) + '"' : '';
-        const actLine = activityLine(a, m.voiceChannel);
-        html += '<div class="member" title="' + escapeHtml(m.displayName) + '">'
-          + '<div class="avatar-wrap"><img src="' + escapeHtml(m.avatar) + '" alt=""><div class="status-dot status-' + escapeHtml(m.status) + '"></div></div>'
-          + '<div class="info">'
-          +   '<div class="name"' + nameStyle + '>' + escapeHtml(m.displayName) + '</div>'
-          +   (actLine ? '<div class="activity">' + actLine + '</div>' : '')
-          + '</div>'
-          + '</div>';
-      }
+    title.textContent = data.guildName ? 'Live Activity — ' + data.guildName : 'Live Activity';
+    icon.src = data.guildIcon || '';
+    icon.style.visibility = data.guildIcon ? 'visible' : 'hidden';
+
+    const totalRows = data.sections.reduce((n, s) => n + s.rows.length, 0);
+    sub.textContent = totalRows === 0
+      ? 'No tracked activity right now'
+      : totalRows + (totalRows === 1 ? ' active role' : ' active roles');
+
+    if (totalRows === 0) {
+      root.innerHTML = '<div class="empty">Nothing happening — go play something.</div>';
+    } else {
+      root.innerHTML = data.sections.map((s) => ''
+        + '<section class="section">'
+        +   '<h2><span>' + escapeHtml(s.emoji) + '</span><span>' + escapeHtml(s.title) + '</span></h2>'
+        +   '<div class="grid">' + s.rows.map(renderRow).join('') + '</div>'
+        + '</section>'
+      ).join('');
     }
-    list.innerHTML = html;
+
+    if (data.fetchedAt) {
+      const d = new Date(data.fetchedAt);
+      updated.textContent = d.toLocaleTimeString();
+    }
   }
 
   async function tick() {
     try {
-      const r = await fetch('/api/members?key=' + encodeURIComponent(key), { cache: 'no-store' });
+      const r = await fetch('/api/activity?key=' + encodeURIComponent(key), { cache: 'no-store' });
       if (!r.ok) {
         err.textContent = 'Error ' + r.status + ': ' + (await r.text());
         err.style.display = '';
         return;
       }
-      const data = await r.json();
-      if (data.error) {
-        err.textContent = 'Error: ' + data.error;
-        err.style.display = '';
-        return;
-      }
-      render(data);
+      render(await r.json());
     } catch (e) {
       err.textContent = 'Network error: ' + e.message;
       err.style.display = '';
@@ -341,6 +291,13 @@ function startPanel(client) {
 
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, "http://x");
+
+    if (url.pathname === "/healthz") {
+      res.writeHead(200, { "Content-Type": "text/plain" });
+      res.end("ok");
+      return;
+    }
+
     const provided = url.searchParams.get("key") || (req.headers["authorization"] || "").replace(/^Bearer\s+/i, "");
     if (!safeEqual(provided, token)) {
       res.writeHead(401, { "Content-Type": "text/plain" });
@@ -353,7 +310,7 @@ function startPanel(client) {
       res.end(HTML_PAGE);
       return;
     }
-    if (url.pathname === "/api/members") {
+    if (url.pathname === "/api/activity") {
       try {
         const snap = buildSnapshot(client, guildId);
         res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
@@ -362,11 +319,6 @@ function startPanel(client) {
         res.writeHead(500, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: e.message }));
       }
-      return;
-    }
-    if (url.pathname === "/healthz") {
-      res.writeHead(200, { "Content-Type": "text/plain" });
-      res.end("ok");
       return;
     }
     res.writeHead(404, { "Content-Type": "text/plain" });

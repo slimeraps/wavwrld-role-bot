@@ -8,6 +8,24 @@ activity surface now lives in a single auto-updating embed in a dedicated
 stats channel. Roles stay named cleanly (`Playing Rust`), and the embed
 shows time per activity, member count, and who is in it.
 
+## 9.7.3 changelog
+
+**HTTP panel switched to live activity view:**
+- `src/panel.js` no longer renders the per-member online list. The page
+  now shows the same activity sections as the Discord embed (🎮 Playing
+  / 🎤 Voice / 🎵 Listening / 📺 Watching / 🟣 Other), each row laid
+  out as a CSS grid: time / role name / member count / member names.
+- Data sourced from `collectRows` in `src/stats-channel.js` — exported
+  so the panel and the Discord embed stay in sync without duplicating
+  categorization logic. Same time numbers, same grouping.
+- Endpoint renamed from `/api/members` to `/api/activity`. The HTML
+  page polls every 5 seconds (faster than the embed since there's no
+  Discord rate limit on the panel's own HTTP responses).
+- Auth, healthz, and PANEL_TOKEN / PANEL_PORT / PANEL_GUILD_ID env
+  vars unchanged. Existing panel URLs (with `?key=...`) keep working;
+  bookmarks pointing at `/api/members` will need to switch to
+  `/api/activity` if any external integrations consumed it.
+
 ## 9.7.2 changelog
 
 **Voice role no longer stripped by presence updates:**

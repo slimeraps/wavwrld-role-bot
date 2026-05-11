@@ -200,4 +200,4 @@ async function migrateStaleTimerPrefixes(client) {
   }
 }
 
-module.exports = { updateStatsEmbed, migrateStaleTimerPrefixes };
+module.exports = { updateStatsEmbed, migrateStaleTimerPrefixes, collectRows };
