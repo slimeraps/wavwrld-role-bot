@@ -1,11 +1,104 @@
-# WAV Bot — 9.6 (retire /playing and /stats variants)
+# WAV Bot — 9.7 (live activity embed replaces inline timer prefixes)
 
-9.6 removes the `/playing` command and the `alltime` / `voice` stats
-variants. They were clutter and rarely used — only the default 30-day
-"Top Members" view of `/stats` remains. The rendering helpers
-(`runVoice30d`, `playingCmd`) are still in `src/stats.js` so the
-underlying machinery can be brought back if we ever want it, but no
-command is wired to them.
+9.7 ends the `[Xh Ym] Playing Foo` role-name prefix experiment. Discord
+caps role renames at ~2 per 10 min per role, so encoding a ticking timer
+in the role name was fundamentally rate-limited — every minute tick
+risked stalling and every restart doubled the rename load. The live
+activity surface now lives in a single auto-updating embed in a dedicated
+stats channel. Roles stay named cleanly (`Playing Rust`), and the embed
+shows time per activity, member count, and who is in it.
+
+## 9.7.1 changelog
+
+**Stats embed polish:**
+- Each section is now rendered as a fenced code block so columns line up
+  in monospace: time right-aligned, role name padded to the widest entry,
+  member count, then up to 3 member names. No more cramped single-line
+  rows.
+- Update interval dropped from 60s to 15s. Discord allows ~5 message
+  edits per 5s per channel and the hash-skip means most ticks don't
+  edit at all, so we stay well under the limit while feeling much more
+  live.
+
+## 9.7.0 changelog
+
+**New surface — live activity embed:**
+- New module `src/stats-channel.js` posts a single embed in the channel
+  configured by `STATS_CHANNEL_ID` (env var, preferred) or
+  `config.statsChannelId`.
+- Sections grouped by category derived from the role name prefix:
+  🎮 Playing, 🎤 Voice, 🎵 Listening, 📺 Watching, 🟣 Other.
+- Time per activity sourced from `tracker.activeElapsedMinutes` — the
+  same data the inline prefix used to read.
+- Embed message ID persisted per guild in `state.json` under
+  `statsEmbedMessageId`, so edits survive restarts. If the cached message
+  is missing on Discord (deleted/purged), the bot transparently posts a
+  new one.
+- Hash check skips the API edit when nothing the embed displays changed,
+  keeping the channel quiet between meaningful updates.
+
+**Removed — role name renames as a live surface:**
+- `src/timers.js` reduced to two helpers: `humanMemberCount` (still used
+  by promotion/cleanup) and `renameRoleThrottled` (still used by voice
+  channel mirroring and the one-time prefix migration).
+- `startRoleTimer`, `stopRoleTimer`, `updateRoleTimers`,
+  `initRoleTimersForGuild`, `enableTimers`, the `timerRoleName`
+  formatter, the `timers` table, and the global `timerRenameQueue`
+  serializer for tick renames are all gone.
+- `presence.js` no longer calls `startRoleTimer` / `stopRoleTimer` —
+  Discord role names just stay clean. `cleanup.js`
+  `deleteEmptyBotCreatedRole` no longer calls `stopRoleTimer` before
+  deleting an empty role. `events.js` no longer calls
+  `initRoleTimersForGuild` or `enableTimers` on startup.
+- `bot.js` `setInterval(updateRoleTimers, 60_000)` replaced with
+  `setInterval(updateStatsEmbed, 15_000)`.
+
+**One-time migration:**
+- On the first boot of 9.7.0, any premade role whose name still carries
+  a stale `[Xh Ym]` prefix is renamed back to its clean name in the
+  background, throttled via `renameRoleThrottled` (2s gap between calls,
+  30s per-call timeout). Failures (per-role rate limit) are logged and
+  skipped — the migration is best-effort and never blocks startup.
+
+**Implementation notes:**
+- Helper `formatTimerMinutes` moved from `src/timers.js` to `src/util.js`
+  since the embed renderer is its only remaining consumer.
+- `STATS_CHANNEL_ID` is read from `process.env` first so the channel can
+  be configured via `fly secrets set` without touching the persisted
+  config on the volume.
+- The `statsEmbeds` map (guildId → messageId) is added to `src/state.js`
+  and serialized into `roles.json` via the existing `saveData()` path.
+
+## 9.6.7 changelog
+
+**Role rename hangs (final fix):**
+- Wiring timers to the tracker (which carries history across restarts)
+  meant every startup did two renames per role: strip stale prefix, then
+  immediately re-add it from tracker. Discord's per-role rate limit then
+  hung the second rename for the full 30s timeout.
+- Dropped the proactive "clean prefix on startup" pass in
+  `initRoleTimersForGuild`. `startRoleTimer` handles active roles in one
+  shot, and `stopRoleTimer` cleans empty roles via the next tick.
+- `startRoleTimer` short-circuits when `role.name` already matches the
+  computed timer name — covers the common quick-restart case where the
+  persisted name still reflects current minutes.
+- Earlier in 9.6.7, also: routed all `role.setName` calls through the
+  global throttle and added a 30s `Promise.race` timeout
+  (`renameRoleThrottled`), so a per-role 429 surfaces as a logged error
+  instead of locking up the bot indefinitely.
+
+## 9.6.6 changelog
+
+**`/cleanup` no longer hangs on the first role:**
+- `handleCleanupCmd` used to call `stopRoleTimer` after removing members
+  from each premade role. That `stopRoleTimer` issued a `role.setName`
+  to strip the timer prefix, which Discord's per-role rate limit could
+  stall indefinitely (no error, just hangs). Cleanup also already
+  renames every premade role back to its clean name in a later pass, so
+  the inline call was redundant.
+- After the change, `/cleanup` removes everyone from each premade role
+  and never tries to rename mid-loop. The next `updateRoleTimers` tick
+  sees `humanMemberCount === 0` and calls `stopRoleTimer` naturally.
 
 ## 9.6.5 changelog
 
