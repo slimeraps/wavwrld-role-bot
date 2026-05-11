@@ -48,7 +48,8 @@ function collectRows(guild) {
       .map((m) => m.displayName || m.user?.username || m.id)
       .sort((a, b) => a.localeCompare(b));
 
-    rows[section].push({ display, minutes, count: humans.size, memberNames });
+    const timeStr = minutes > 0 ? formatTimerMinutes(minutes) : "—";
+    rows[section].push({ display, minutes, timeStr, count: humans.size, memberNames });
   }
 
   for (const section of Object.keys(rows)) {
@@ -57,35 +58,55 @@ function collectRows(guild) {
   return rows;
 }
 
-function formatRow({ display, minutes, count, memberNames }) {
-  const time = minutes > 0 ? formatTimerMinutes(minutes) : "—";
-  const shown = memberNames.slice(0, MAX_MEMBER_NAMES_PER_ROW);
-  const extra = memberNames.length > shown.length ? ` +${memberNames.length - shown.length}` : "";
-  const who = shown.length > 0 ? ` · ${shown.join(", ")}${extra}` : "";
-  return `\`${time.padStart(6)}\` · **${display}** · ${count}${who}`;
+// Render a section as a fenced code block so columns line up in monospace.
+// Each row: TIME (right) │ NAME (left, padded) │ COUNT │ MEMBERS (truncated).
+function buildSectionBlock(items) {
+  if (items.length === 0) return null;
+
+  const TIME_W = Math.max(...items.map((r) => r.timeStr.length), 5);
+  const NAME_W = Math.max(...items.map((r) => r.display.length), 6);
+
+  const lines = items.map((r) => {
+    const time = r.timeStr.padStart(TIME_W);
+    const name = r.display.padEnd(NAME_W);
+    const count = `(${r.count})`;
+    const shown = r.memberNames.slice(0, MAX_MEMBER_NAMES_PER_ROW);
+    const extra = r.memberNames.length > shown.length ? ` +${r.memberNames.length - shown.length}` : "";
+    const who = shown.length > 0 ? `   ${shown.join(", ")}${extra}` : "";
+    return `${time}    ${name}    ${count}${who}`;
+  });
+
+  // Trim to embed field limit (1024 chars including the ``` fences).
+  const FENCE_OVERHEAD = 8; // ```\n + \n```
+  const MAX = 1024 - FENCE_OVERHEAD;
+  let body = lines.join("\n");
+  if (body.length > MAX) body = body.slice(0, MAX - 1) + "…";
+  return "```\n" + body + "\n```";
 }
 
 function buildEmbed(guild, rows) {
   const sections = [
-    { key: "playing", title: "🎮 Playing" },
-    { key: "voice", title: "🎤 Voice" },
-    { key: "listening", title: "🎵 Listening" },
-    { key: "watching", title: "📺 Watching" },
-    { key: "other", title: "🟣 Other" },
+    { key: "playing", title: "🎮  Playing" },
+    { key: "voice", title: "🎤  Voice" },
+    { key: "listening", title: "🎵  Listening" },
+    { key: "watching", title: "📺  Watching" },
+    { key: "other", title: "🟣  Other" },
   ];
 
   const embed = new EmbedBuilder()
     .setColor(EMBED_COLOR)
-    .setTitle(`⏱ Live Activity — ${guild.name}`)
+    .setTitle(`⏱  Live Activity — ${guild.name}`)
     .setTimestamp(new Date())
-    .setFooter({ text: "Updates every minute" });
+    .setFooter({ text: "Updates every 15 seconds" });
 
   let anyContent = false;
   for (const { key, title } of sections) {
     const items = rows[key];
     if (!items || items.length === 0) continue;
+    const block = buildSectionBlock(items);
+    if (!block) continue;
     anyContent = true;
-    embed.addFields({ name: title, value: items.map(formatRow).join("\n").slice(0, 1024) });
+    embed.addFields({ name: title, value: block });
   }
 
   if (!anyContent) {

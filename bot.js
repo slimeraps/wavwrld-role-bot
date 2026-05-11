@@ -26,11 +26,14 @@ setInterval(async () => {
   }
 }, 30 * 60 * 1000);
 
+// Discord allows ~5 message edits per 5s per channel. We tick every 15s and the
+// embed only edits when content actually changed (hash check), so we stay well
+// under the limit even with frequent activity changes.
 setInterval(() => {
   updateStatsEmbed(client).catch((err) => {
     console.warn("[stats-channel] interval update errored:", err.message);
   });
-}, 60 * 1000);
+}, 15 * 1000);
 
 function maintenanceContext() {
   const log = async (content) => {
