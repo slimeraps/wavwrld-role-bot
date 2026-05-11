@@ -73,6 +73,14 @@ async function startRoleTimer(guild, role, originalName) {
   const newName = timerRoleName(elapsedMinutes, originalName);
   timers[guildId][role.id] = { originalName, lastPrefixMinutes: -1 };
 
+  // Persisted role name already matches what tracker says — register the timer
+  // without burning a rename. Avoids hitting Discord's per-role rate limit on
+  // every restart now that tracker carries history across restarts.
+  if (role.name === newName) {
+    timers[guildId][role.id].lastPrefixMinutes = elapsedMinutes;
+    return;
+  }
+
   if (config.dryRun) {
     console.log(`[DRY RUN] Would start timer for role "${role.name}" -> "${newName}"`);
     await sendMonitoring(`[DRY RUN] Timer started for role \`${role.name}\` -> \`${newName}\``);
@@ -203,29 +211,17 @@ async function initRoleTimersForGuild(guild) {
   const rolesMapping = roleMap[guildId];
   if (!rolesMapping) return;
 
+  // Don't proactively strip stale prefixes here — that doubled the rename count
+  // per role on startup and pushed us into Discord's per-role rate limit. For
+  // active roles, startRoleTimer renames straight to the final name (and skips
+  // when role.name already matches). Empty roles with stale prefix get cleaned
+  // by stopRoleTimer on the next updateRoleTimers tick.
   for (const [, roleId] of Object.entries(rolesMapping)) {
     const role = guild.roles.cache.get(roleId);
     if (!role) continue;
 
-    const cleanName = stripTimerPrefix(role.name);
-    if (role.name !== cleanName) {
-      if (config.dryRun) {
-        console.log(`[DRY RUN] Would clean role name from "${role.name}" to "${cleanName}"`);
-        await sendMonitoring(`[DRY RUN] Would clean role name: \`${role.name}\` -> \`${cleanName}\``);
-      } else {
-        try {
-          await renameRoleThrottled(role, cleanName, "Cleaning prefix on startup");
-          console.log(`Cleaned role name from "${role.name}" to "${cleanName}"`);
-          await sendMonitoring(`Cleaned role name: \`${role.name}\` -> \`${cleanName}\``);
-        } catch (err) {
-          console.error(`Failed to clean role name for ${cleanName}:`, err.message);
-          await sendMonitoring(`Failed to clean role name: \`${role.name}\` -> \`${cleanName}\`: ${err.message}`);
-        }
-      }
-    }
-
-    if (humanMemberCount(role) > 0 && (!timers[guildId] || !timers[guildId][roleId])) {
-      await startRoleTimer(guild, role, cleanName);
+    if (humanMemberCount(role) > 0 && !timers[guildId]?.[roleId]) {
+      await startRoleTimer(guild, role, stripTimerPrefix(role.name));
     }
   }
 }
