@@ -8,6 +8,25 @@ activity surface now lives in a single auto-updating embed in a dedicated
 stats channel. Roles stay named cleanly (`Playing Rust`), and the embed
 shows time per activity, member count, and who is in it.
 
+## 9.7.2 changelog
+
+**Voice role no longer stripped by presence updates:**
+- `voice.js` registers each voice role's name in the shared
+  `autoManaged` Set so it's known as a bot-managed role. The presence
+  removal loop in `src/presence.js` was iterating that Set to drop any
+  managed role not present in the member's current activities — but
+  `currentTargetRoleNames` only carries game activities, so voice roles
+  were always considered "stale" and removed.
+- Trigger sequence: in voice + start a game → presence fires, adds the
+  game role, then strips the voice role; stop the game → presence fires
+  again, removes the game role, but never re-adds the voice role
+  because `presence.js` has no voice context. Voice role stayed gone
+  until the member left and rejoined a voice channel.
+- Fix: build a `Set` of voice role IDs from `voiceChannelRoles[guildId]`
+  at the top of `handlePresence` and skip any role whose ID is in that
+  set during the removal pass. Voice roles are owned by `voice.js` —
+  `presence.js` should never touch them.
+
 ## 9.7.1 changelog
 
 **Stats embed polish:**

@@ -1,7 +1,7 @@
 const { config, premadeRoleIdsSet } = require("./config");
 const { getTargetRoleName, ensurePlayingPrefix, stripTimerPrefix } = require("./util");
 const { sendMonitoring } = require("./monitoring");
-const { roleMap, autoManaged, promotedRoles, saveData } = require("./state");
+const { roleMap, autoManaged, promotedRoles, voiceChannelRoles, saveData } = require("./state");
 const { humanMemberCount } = require("./timers");
 const { checkPromotedRolesEmpty } = require("./promotion");
 const tracker = require("./tracker");
@@ -141,12 +141,18 @@ async function handlePresence(presence) {
     }
   }
 
+  // Voice roles share autoManaged with game roles but are owned by voice.js.
+  // Excluding them here prevents presence updates from stripping someone's
+  // voice role just because their current activities don't match it.
+  const voiceRoleIds = new Set(Object.values(voiceChannelRoles[guildId] || {}));
+
   let removedPromotedRole = false;
   for (const roleName of autoManaged[guildId]) {
     if (protectedRoles.includes(roleName)) continue;
 
     const roleId = roleMap[guildId][roleName];
     if (!roleId || currentTargetRoleNames.has(roleName)) continue;
+    if (voiceRoleIds.has(roleId)) continue;
 
     if (member.roles.cache.has(roleId)) {
       if (config.dryRun) {
