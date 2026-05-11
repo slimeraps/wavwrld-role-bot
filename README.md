@@ -7,6 +7,23 @@ variants. They were clutter and rarely used — only the default 30-day
 underlying machinery can be brought back if we ever want it, but no
 command is wired to them.
 
+## 9.6.3 changelog
+
+**Hourly maintenance restart:**
+- The bot now runs an hourly maintenance cycle: cleanup first, state
+  flush, then a clean process exit so Fly restarts the machine.
+- Uses Fly's existing `restart = "always"` behavior instead of calling
+  Fly from inside the bot process.
+- The maintenance context logs cleanup output without posting command
+  replies into Discord channels.
+
+**Persistent state safety:**
+- `!cleanup` now preserves `roles.json` instead of deleting it, so
+  tracker/playtime/open-session memory survives manual cleanup and
+  hourly maintenance restarts.
+- Cleanup still clears and rebuilds role mappings through the normal
+  save/resync path.
+
 ## 9.6.2 changelog
 
 **Role timer cleanup:**

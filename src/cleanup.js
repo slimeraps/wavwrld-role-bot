@@ -1,5 +1,4 @@
-const fs = require("fs");
-const { config, premadeRoleIdsSet, ROLES_FILE } = require("./config");
+const { config, premadeRoleIdsSet } = require("./config");
 const { sleep, stripTimerPrefix } = require("./util");
 const { sendMonitoring } = require("./monitoring");
 const client = require("./client");
@@ -324,13 +323,7 @@ async function handleCleanupCmd(ctx) {
     }
   }
 
-  if (!config.dryRun) {
-    try {
-      if (fs.existsSync(ROLES_FILE)) fs.unlinkSync(ROLES_FILE);
-    } catch (e) {
-      console.error("Could not delete roles.json:", e.message);
-    }
-  }
+  if (!config.dryRun) saveData();
 
   await ctx.followUp(`✅ Cleanup complete. Removed premade roles from ${premadeRemovedCount} memberships, fallback role from ${fallbackRemovedCount} members, deleted ${deletedCount} bot‑created roles. Re-applying roles...`);
   await sendMonitoring(`✅ **Cleanup finished** – Premade roles removed from ${premadeRemovedCount} members, fallback from ${fallbackRemovedCount}, ${deletedCount} bot roles deleted. Re-applying roles...`);
