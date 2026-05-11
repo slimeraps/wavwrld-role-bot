@@ -9,13 +9,16 @@
   "monitoringChannelId": "",
   "statsChannelId": "",
   "protectedRoles": [
-    "Founder",
+    "Founder"
   ],
   "activityRoleMap": {
-    "Escape from Tarkov": "Playing Tarkov",
+    "Escape from Tarkov": "Playing Tarkov"
+  },
+  "activityAliases": {
+    "GitHub": "Playing Github"
   },
   "premadeRoleIds": {
-    "Escape from Tarkov": "DISCORD_ROLE_ID",
+    "Escape from Tarkov": "DISCORD_ROLE_ID"
   },
   "activityBlacklist": [
     "Fall Guys"

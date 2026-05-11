@@ -1,5 +1,5 @@
 const { config, premadeRoleIdsSet } = require("./config");
-const { getTargetRoleName, ensurePlayingPrefix, stripTimerPrefix } = require("./util");
+const { getTargetRoleName, getPremadeRoleId, hasActivityConfig, ensurePlayingPrefix, stripTimerPrefix } = require("./util");
 const { sendMonitoring } = require("./monitoring");
 const { roleMap, autoManaged, promotedRoles, voiceChannelRoles, saveData } = require("./state");
 const { humanMemberCount } = require("./timers");
@@ -29,9 +29,7 @@ async function handlePresence(presence) {
 
   for (const activity of presence.activities) {
     if (activity.type !== 0) {
-      const hasPremade = config.premadeRoleIds && config.premadeRoleIds[activity.name];
-      const hasMap = config.activityRoleMap && config.activityRoleMap[activity.name];
-      if (!hasPremade && !hasMap) continue;
+      if (!hasActivityConfig(activity.name)) continue;
     }
 
     if (blacklist.has(activity.name.toLowerCase())) {
@@ -42,8 +40,9 @@ async function handlePresence(presence) {
     let role = null;
     let targetRoleName = null;
 
-    if (config.premadeRoleIds && config.premadeRoleIds[activity.name]) {
-      const roleId = config.premadeRoleIds[activity.name];
+    const premadeRoleId = getPremadeRoleId(activity.name);
+    if (premadeRoleId) {
+      const roleId = premadeRoleId;
       role = guild.roles.cache.get(roleId);
       if (role) {
         targetRoleName = stripTimerPrefix(role.name);

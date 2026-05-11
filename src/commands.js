@@ -4,6 +4,7 @@ const { sendMonitoring } = require("./monitoring");
 const { handleCleanupCmd, cleanupAndResync } = require("./cleanup");
 const m = require("./music");
 const { statsCmd } = require("./stats");
+const { doctorCmd } = require("./doctor");
 
 function ctxFromMessage(message) {
   return {
@@ -179,6 +180,17 @@ const COMMANDS = [
     description: "Owner-only: full cleanup of bot-managed roles and restart",
     needsOwner: true,
     handler: handleCleanupCmd,
+  },
+  {
+    name: "doctor",
+    description: "Owner-only: audit and repair activity role tracking",
+    needsOwner: true,
+    options: [
+      { name: "fix", type: ApplicationCommandOptionType.Boolean, required: false, description: "Delete safe duplicates and prune stale tracking" },
+    ],
+    parseText: (args) => ({ fix: args.some((arg) => ["fix", "--fix", "true", "yes"].includes(String(arg).toLowerCase())) }),
+    parseSlash: (i) => ({ fix: !!i.options.getBoolean("fix") }),
+    handler: doctorCmd,
   },
   {
     name: "premade",

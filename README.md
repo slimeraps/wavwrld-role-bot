@@ -1,12 +1,36 @@
-# WAV Bot — 9.7 (live activity embed replaces inline timer prefixes)
+# WAV Bot — 10.0 (Role Doctor and activity aliases)
 
-9.7 ends the `[Xh Ym] Playing Foo` role-name prefix experiment. Discord
+10.0 adds an owner-only Role Doctor plus activity aliases so mismatched
+presence names can resolve to the right premade role instead of creating
+duplicates. It also keeps the 9.7 live activity embed work: 9.7 ended the
+`[Xh Ym] Playing Foo` role-name prefix experiment. Discord
 caps role renames at ~2 per 10 min per role, so encoding a ticking timer
 in the role name was fundamentally rate-limited — every minute tick
 risked stalling and every restart doubled the rename load. The live
 activity surface now lives in a single auto-updating embed in a dedicated
 stats channel. Roles stay named cleanly (`Playing Rust`), and the embed
 shows time per activity, member count, and who is in it.
+
+## 10.0 changelog
+
+**Role Doctor:**
+- New owner-only `/doctor` command audits the current guild for duplicate
+  role names, missing premade role IDs, stale `roles.json` tracking, stale
+  promoted-role IDs, and observed activity names that look like they need
+  an alias.
+- `/doctor fix:true` deletes duplicate non-premade roles when there is a
+  configured/tracked role to keep, prunes stale role tracking, and saves
+  the repaired state.
+- Text command support works too: `!doctor` for audit and `!doctor fix`
+  for the repair pass.
+
+**Activity aliases:**
+- New `config.activityAliases` map lets Discord presence names resolve to
+  canonical activity/role names before role assignment.
+- Activity matching is now case-insensitive across aliases, activity maps,
+  and premade role IDs. For example, `GitHub`, `Github`, and
+  `Playing GitHub` can all resolve to the same premade `Playing Github`
+  role instead of creating duplicates.
 
 ## 9.7.4 changelog
 
@@ -403,6 +427,10 @@ and assigns it. When they stop, the role is removed. Two modes:
 Toggle modes at runtime with `/premade` (owner only) — it flips the
 config flag, persists it, and runs a full cleanup + resync.
 
+`config.activityAliases` can normalize presence names before this lookup.
+That is useful when Discord reports a different spelling/casing than the
+role config, such as `GitHub` vs `Github`.
+
 ### Voice channel roles
 
 [src/voice.js](src/voice.js) gives each voice channel its own role. When a
@@ -500,6 +528,7 @@ across cleanup so memory survives the restart.
 | `/stats` (`!stats`, `!leaderboard`, `!lb`) | everyone | 30-day leaderboard PNG. |
 | `/play`, `/skip`, `/pause`, `/resume`, `/stop`, `/queue`, `/nowplaying`, `/volume` | VIP role | Music player. |
 | `/cleanup` | owner | Full resync of all managed roles. |
+| `/doctor` | owner | Audit duplicate/stale role state; `fix:true` repairs safe items. |
 | `/premade` | owner | Toggle `onlyUsePremadeRoles` and resync. |
 
 Owner is `config.ownerId`; VIP role is `config.vipRoleId`. Owner-only
@@ -516,6 +545,8 @@ commands are deliberately omitted from `/help`.
 - `statsChannelId` — channel for the live activity embed (overridden by
   `STATS_CHANNEL_ID`).
 - `premadeRoleIds` — `{ gameName: roleId }` map of curated game roles.
+- `activityAliases` — `{ observedActivityName: canonicalName }` map for
+  spelling/casing aliases before role lookup.
 - `voiceChannelRoles` — `{ guildId: { channelId: roleId } }` map for VC
   mirroring.
 - `onlyUsePremadeRoles` — boolean; flipped by `/premade`.
