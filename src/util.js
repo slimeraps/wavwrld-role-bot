@@ -13,7 +13,7 @@ function ensurePlayingPrefix(roleName) {
 }
 
 function stripTimerPrefix(name) {
-  return name.replace(/^\[\d+m\]\s*/, "");
+  return name.replace(/^\[\d+(?:h\d*m?|m)\]\s*/, "");
 }
 
 function sanitizeVoiceChannelName(name) {

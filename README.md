@@ -7,6 +7,21 @@ variants. They were clutter and rarely used — only the default 30-day
 underlying machinery can be brought back if we ever want it, but no
 command is wired to them.
 
+## 9.6.4 changelog
+
+**Role timer display:**
+- Timer prefixes now switch from raw minutes to compact hour formatting
+  once they pass 60 minutes: `[1h]`, `[1h30m]`, `[2h]`.
+- Short timers still use minute formatting such as `[30m]`.
+- Prefix cleanup now understands both old minute-only prefixes and the
+  new hour-style prefixes.
+
+**Voice role timers:**
+- Voice role timers now read live elapsed time from the voice stats
+  tracker source keyed by channel ID.
+- Game role timers continue to read from the game stats tracker source
+  keyed by role/game name.
+
 ## 9.6.3 changelog
 
 **Hourly maintenance restart:**

@@ -2,7 +2,7 @@ const { config } = require("./config");
 const { sleep, stripTimerPrefix } = require("./util");
 const { sendMonitoring } = require("./monitoring");
 const client = require("./client");
-const { roleMap } = require("./state");
+const { roleMap, voiceChannelRoles } = require("./state");
 const tracker = require("./tracker");
 
 const TIMER_RENAME_GAP_MS = 2000;
@@ -16,6 +16,17 @@ function humanMemberCount(role, excludeMemberId = null) {
   return role.members.filter((member) => (
     !member.user.bot && member.id !== excludeMemberId
   )).size;
+}
+
+function formatTimerMinutes(minutes) {
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return remainder === 0 ? `${hours}h` : `${hours}h${remainder}m`;
+}
+
+function timerRoleName(minutes, originalName) {
+  return `[${formatTimerMinutes(minutes)}] ${originalName}`;
 }
 
 // Serialize timer-related role renames so two never fire within TIMER_RENAME_GAP_MS,
@@ -37,7 +48,7 @@ async function startRoleTimer(guild, role, originalName) {
   if (timers[guildId][role.id]) return;
 
   const elapsedMinutes = getRoleTimerMinutes(guildId, role, originalName);
-  const newName = `[${elapsedMinutes}m] ${originalName}`;
+  const newName = timerRoleName(elapsedMinutes, originalName);
   timers[guildId][role.id] = { originalName, lastPrefixMinutes: -1 };
 
   if (config.dryRun) {
@@ -91,7 +102,15 @@ function getRoleTimerMinutes(guildId, role, roleName) {
   const memberIds = [...role.members.values()]
     .filter((member) => !member.user.bot)
     .map((member) => member.id);
-  return tracker.activeElapsedMinutes(guildId, "game", roleName, memberIds);
+  const source = timerSourceForRole(guildId, role.id, roleName);
+  return tracker.activeElapsedMinutes(guildId, source.type, source.key, memberIds);
+}
+
+function timerSourceForRole(guildId, roleId, roleName) {
+  for (const [channelId, mappedRoleId] of Object.entries(voiceChannelRoles[guildId] || {})) {
+    if (mappedRoleId === roleId) return { type: "voice", key: channelId };
+  }
+  return { type: "game", key: roleName };
 }
 
 async function reconcileRoleTimersForGuild(guild) {
@@ -138,7 +157,7 @@ async function updateRoleTimers() {
       const elapsedMinutes = getRoleTimerMinutes(guildId, role, timer.originalName);
       if (elapsedMinutes === timer.lastPrefixMinutes) continue;
 
-      const targetName = `[${elapsedMinutes}m] ${timer.originalName}`;
+      const targetName = timerRoleName(elapsedMinutes, timer.originalName);
 
       if (config.dryRun) {
         console.log(`[DRY RUN] Timer tick for role ${role.name} -> ${targetName}`);
@@ -147,8 +166,8 @@ async function updateRoleTimers() {
       } else {
         try {
           await throttleTimerRename();
-          await role.setName(targetName, `Timer tick ${elapsedMinutes}m`);
-          console.log(`Timer tick for role ${timer.originalName}: [${elapsedMinutes}m]`);
+          await role.setName(targetName, `Timer tick ${formatTimerMinutes(elapsedMinutes)}`);
+          console.log(`Timer tick for role ${timer.originalName}: [${formatTimerMinutes(elapsedMinutes)}]`);
           await sendMonitoring(`Timer tick - \`${timer.originalName}\` renamed to \`${targetName}\``);
           timer.lastPrefixMinutes = elapsedMinutes;
         } catch (err) {
@@ -204,5 +223,6 @@ module.exports = {
   initRoleTimersForGuild,
   reconcileRoleTimersForGuild,
   humanMemberCount,
+  formatTimerMinutes,
   enableTimers,
 };
