@@ -16,6 +16,7 @@ const playtime = {};           // guildId -> { type: { period: { key: { subjectI
 const playtimeResets = {};     // guildId -> { daily: ts, weekly: ts }
 const playtimeHistory = {};    // guildId -> [{ period, endedAt, byType: { type: [{ key, minutes }, ...] } }]
 const voiceChannelNames = {};  // guildId -> { channelId: "last seen name" } (for rendering after rename/delete)
+const statsEmbeds = {};        // guildId -> messageId of the live activity embed (so edits survive restarts)
 
 if (fs.existsSync(ROLES_FILE)) {
   try {
@@ -28,6 +29,7 @@ if (fs.existsSync(ROLES_FILE)) {
       if (typeof guildData.playtimeResets === "object") playtimeResets[guildId] = guildData.playtimeResets;
       if (Array.isArray(guildData.playtimeHistory)) playtimeHistory[guildId] = guildData.playtimeHistory;
       if (typeof guildData.voiceChannelNames === "object") voiceChannelNames[guildId] = guildData.voiceChannelNames;
+      if (typeof guildData.statsEmbedMessageId === "string") statsEmbeds[guildId] = guildData.statsEmbedMessageId;
       if (guildData.roles) {
         roleMap[guildId] = guildData.roles;
         autoManaged[guildId] = new Set(guildData.auto || []);
@@ -56,6 +58,7 @@ function buildSnapshot() {
     ...Object.keys(voiceChannelRoles),
     ...Object.keys(playtime),
     ...Object.keys(openSessions),
+    ...Object.keys(statsEmbeds),
   ]);
   for (const guildId of allGuildIds) {
     out[guildId] = {
@@ -72,6 +75,7 @@ function buildSnapshot() {
       playtimeHistory: playtimeHistory[guildId] || [],
       voiceChannelNames: voiceChannelNames[guildId] || {},
     };
+    if (statsEmbeds[guildId]) out[guildId].statsEmbedMessageId = statsEmbeds[guildId];
     if (guildVolumes[guildId] != null) out[guildId].volume = guildVolumes[guildId];
   }
   return out;
@@ -124,6 +128,7 @@ module.exports = {
   playtimeResets,
   playtimeHistory,
   voiceChannelNames,
+  statsEmbeds,
   saveData,
   scheduleSave,
   flushPendingSave,

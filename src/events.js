@@ -4,7 +4,7 @@ const { sendMonitoring } = require("./monitoring");
 const client = require("./client");
 const { roleMap, autoManaged, promotedRoles, voiceChannelRoles, saveData } = require("./state");
 const tracker = require("./tracker");
-const { initRoleTimersForGuild, enableTimers } = require("./timers");
+const { migrateStaleTimerPrefixes, updateStatsEmbed } = require("./stats-channel");
 const { promoteRole, unpromoteRole, checkPromotedRolesEmpty } = require("./promotion");
 const { handlePresence } = require("./presence");
 const { cleanupEmptyManagedRoles, deleteEmptyBotCreatedRole, untrackManagedRole } = require("./cleanup");
@@ -93,13 +93,21 @@ function register() {
     tracker.bootEnd();
 
     if (!config.dryRun) saveData();
-    console.log("Startup sync complete – enabling timers.");
-    await sendMonitoring(`✅ Startup sync complete – enabling timers.`, { noDryRunPrefix: true });
+    console.log("Startup sync complete.");
+    await sendMonitoring(`✅ Startup sync complete.`, { noDryRunPrefix: true });
 
-    enableTimers();
-    for (const guild of client.guilds.cache.values()) {
-      await initRoleTimersForGuild(guild);
-    }
+    // One-time: clean up any leftover [Xh Ym] prefixes from the pre-9.7 era.
+    // Don't await — runs in the background so the rest of startup isn't blocked
+    // by Discord's per-role rename rate limit.
+    migrateStaleTimerPrefixes(client).catch((err) => {
+      console.warn("[migration] stale-prefix sweep errored:", err.message);
+    });
+
+    // Seed the live activity embed immediately so users see it without waiting
+    // for the first interval tick.
+    updateStatsEmbed(client).catch((err) => {
+      console.warn("[stats-channel] initial render failed:", err.message);
+    });
 
     try {
       await initMusic(client);

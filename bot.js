@@ -3,7 +3,7 @@ const { token } = require("./src/config");
 const { register } = require("./src/events");
 const { cleanupEmptyManagedRoles, handleCleanupCmd } = require("./src/cleanup");
 const { checkPromotedRolesEmpty } = require("./src/promotion");
-const { updateRoleTimers } = require("./src/timers");
+const { updateStatsEmbed } = require("./src/stats-channel");
 const { startPanel } = require("./src/panel");
 const { flushPendingSave } = require("./src/state");
 const { sendMonitoring } = require("./src/monitoring");
@@ -26,7 +26,11 @@ setInterval(async () => {
   }
 }, 30 * 60 * 1000);
 
-setInterval(updateRoleTimers, 60 * 1000);
+setInterval(() => {
+  updateStatsEmbed(client).catch((err) => {
+    console.warn("[stats-channel] interval update errored:", err.message);
+  });
+}, 60 * 1000);
 
 function maintenanceContext() {
   const log = async (content) => {

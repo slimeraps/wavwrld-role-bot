@@ -5,7 +5,7 @@ const client = require("./client");
 const { roleMap, autoManaged, promotedRoles, originalPositions, voiceChannelRoles, saveData } = require("./state");
 const { handlePresence } = require("./presence");
 const { initVoiceRolesForGuild } = require("./voice");
-const { stopRoleTimer, renameRoleThrottled } = require("./timers");
+const { renameRoleThrottled } = require("./timers");
 
 function isBotCreatedManagedRole(guildId, roleId, roleName) {
   if (!roleId || premadeRoleIdsSet.has(roleId)) return false;
@@ -34,8 +34,6 @@ async function deleteEmptyBotCreatedRole(guild, roleId, roleName, reason, exclud
     return false;
   }
   if (role.members.some((member) => !member.user.bot && member.id !== excludeMemberId)) return false;
-
-  await stopRoleTimer(guild, role);
 
   if (config.dryRun) {
     console.log(`[DRY RUN] Would delete empty bot-created role "${role.name}"`);

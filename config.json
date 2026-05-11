@@ -7,6 +7,7 @@
   "fallbackRoleId": "",
   "vipRoleId": "",
   "monitoringChannelId": "",
+  "statsChannelId": "",
   "protectedRoles": [
     "Founder",
   ],

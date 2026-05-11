@@ -2,7 +2,7 @@ const { config, premadeRoleIdsSet } = require("./config");
 const { getTargetRoleName, ensurePlayingPrefix, stripTimerPrefix } = require("./util");
 const { sendMonitoring } = require("./monitoring");
 const { roleMap, autoManaged, promotedRoles, saveData } = require("./state");
-const { startRoleTimer, stopRoleTimer, humanMemberCount } = require("./timers");
+const { humanMemberCount } = require("./timers");
 const { checkPromotedRolesEmpty } = require("./promotion");
 const tracker = require("./tracker");
 
@@ -41,7 +41,6 @@ async function handlePresence(presence) {
 
     let role = null;
     let targetRoleName = null;
-    let wasRoleEmpty = false;
 
     if (config.premadeRoleIds && config.premadeRoleIds[activity.name]) {
       const roleId = config.premadeRoleIds[activity.name];
@@ -58,21 +57,14 @@ async function handlePresence(presence) {
         continue;
       }
       if (!member.roles.cache.has(role.id)) {
-        wasRoleEmpty = role.members.size === 0;
         if (config.dryRun) {
           console.log(`[DRY RUN] Would add "${role.name}" to ${member.user.tag}`);
           await sendMonitoring(`🔗 [DRY RUN] Would add role \`${role.name}\` to ${member.user.tag} (${member.id})`);
-          if (wasRoleEmpty) {
-            await startRoleTimer(guild, role, targetRoleName);
-          }
         } else {
           try {
             await member.roles.add(role, `Started playing ${activity.name}`);
             console.log(`+ ${member.user.tag} → ${role.name}`);
             await sendMonitoring(`➕ **Role added** – \`${role.name}\` assigned to ${member.user.tag} (${member.id}) for playing \`${activity.name}\``);
-            if (wasRoleEmpty) {
-              await startRoleTimer(guild, role, targetRoleName);
-            }
           } catch (err) {
             console.error(`Failed to add role to ${member.user.tag}:`, err.message);
             await sendMonitoring(`❌ Failed to add role \`${role.name}\` to ${member.user.tag}: ${err.message}`);
@@ -125,21 +117,14 @@ async function handlePresence(presence) {
       targetRoleName = finalRoleName;
 
       if (!member.roles.cache.has(role.id)) {
-        wasRoleEmpty = role.members.size === 0;
         if (config.dryRun) {
           console.log(`[DRY RUN] Would add "${role.name}" to ${member.user.tag}`);
           await sendMonitoring(`🔗 [DRY RUN] Would add role \`${role.name}\` to ${member.user.tag} (${member.id})`);
-          if (wasRoleEmpty) {
-            await startRoleTimer(guild, role, targetRoleName);
-          }
         } else {
           try {
             await member.roles.add(role, `Started playing ${activity.name}`);
             console.log(`+ ${member.user.tag} → ${role.name}`);
             await sendMonitoring(`➕ **Role added** – \`${role.name}\` assigned to ${member.user.tag} (${member.id}) for playing \`${activity.name}\``);
-            if (wasRoleEmpty) {
-              await startRoleTimer(guild, role, targetRoleName);
-            }
           } catch (err) {
             console.error(`Failed to add role to ${member.user.tag}:`, err.message);
             await sendMonitoring(`❌ Failed to add role \`${role.name}\` to ${member.user.tag}: ${err.message}`);
@@ -178,10 +163,6 @@ async function handlePresence(presence) {
             if (promotedRoles[guildId]?.includes(role.id)) removedPromotedRole = true;
 
             const remainingHumans = humanMemberCount(role, member.id);
-            if (remainingHumans === 0) {
-              await stopRoleTimer(guild, role);
-            }
-
             if (remainingHumans === 0 && config.autoDeleteUnusedRoles && !premadeRoleIdsSet.has(role.id)) {
               try {
                 await role.delete("No members left");
