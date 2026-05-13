@@ -1,11 +1,7 @@
-const { AttachmentBuilder } = require("discord.js");
+const { AttachmentBuilder, EmbedBuilder } = require("discord.js");
 const tracker = require("./tracker");
 const { roleMap } = require("./state");
-const {
-  renderUsersDefault,
-  renderVoice30d,
-  renderPlaying,
-} = require("./stats-image");
+const { stripTimerPrefix } = require("./util");
 
 function displayNameFor(guild, userId) {
   const m = guild.members.cache.get(userId);
@@ -21,19 +17,25 @@ function isTransientNetworkError(err) {
 }
 
 async function sendImage(ctx, buffer, name) {
-  const payload = {
+  const makePayload = () => ({
     files: [new AttachmentBuilder(buffer, { name })],
     allowedMentions: { parse: [] },
-  };
+  });
   try {
-    return await ctx.reply(payload);
+    return await ctx.reply(makePayload());
   } catch (err) {
     if (!isTransientNetworkError(err)) throw err;
-    console.warn(`[stats] upload glitched (${err.message}), retrying once…`);
+    console.warn(`[stats] upload glitched (${err.message}), retrying via fallback send...`);
     try {
-      return await ctx.followUp(payload);
+      const sent = await ctx.followUp(makePayload());
+      console.log("[stats] fallback upload succeeded");
+      return sent;
     } catch (err2) {
-      if (ctx.channel) return ctx.channel.send(payload);
+      if (ctx.channel) {
+        const sent = await ctx.channel.send(makePayload());
+        console.log("[stats] channel fallback upload succeeded");
+        return sent;
+      }
       throw err2;
     }
   }
@@ -42,8 +44,86 @@ async function sendImage(ctx, buffer, name) {
 const sumLeaderboard = (guildId, type, period) =>
   tracker.leaderboard(guildId, type, period).reduce((s, e) => s + e.minutes, 0);
 
-// Shared builder for both /stats (30d) and /stats alltime — same render shape,
-// different period bucket and labels.
+function fmtTime(min) {
+  if (min <= 0) return "0m";
+  const rounded = Math.round(min);
+  if (rounded < 60) return `${rounded}m`;
+  const days = Math.floor(rounded / 1440);
+  const hours = Math.floor((rounded % 1440) / 60);
+  const minutes = rounded % 60;
+  if (days > 0) return hours > 0 ? `${days}d ${hours}h` : `${days}d`;
+  return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+}
+
+function trimText(text, max) {
+  const str = String(text || "");
+  return str.length <= max ? str : `${str.slice(0, max - 1)}…`;
+}
+
+function rankLabel(index) {
+  if (index === 0) return "🥇";
+  if (index === 1) return "🥈";
+  if (index === 2) return "🥉";
+  return `**${index + 1}.**`;
+}
+
+function roleForGameKey(guild, key) {
+  if (!key) return null;
+  const roleId = roleMap[guild.id]?.[key];
+  return roleId ? guild.roles.cache.get(roleId) || null : null;
+}
+
+function topGameLabel(guild, topGame) {
+  if (!topGame) return "🎮 No top game yet";
+  const role = roleForGameKey(guild, topGame.key);
+  const cleanRoleName = role ? stripTimerPrefix(role.name) : topGame.key;
+  const icon = role?.unicodeEmoji || "🎮";
+  return `${icon} ${trimText(cleanRoleName, 24)} • ${fmtTime(topGame.minutes)}`;
+}
+
+function buildStatsEmbed(guild, members, totals, { title, lookbackLabel }) {
+  const totalMinutes = totals.voiceLookback + totals.gameLookback;
+  const rows = [];
+  for (const [index, member] of members.slice(0, 10).entries()) {
+    const memberTotal = member.voiceMinutes + member.gameMinutes;
+    const row = [
+      `${rankLabel(index)} **${trimText(member.displayName, 22)}** — **${fmtTime(memberTotal)}**`,
+      `🎙️ ${fmtTime(member.voiceMinutes)}  •  🎮 ${fmtTime(member.gameMinutes)}  •  ${topGameLabel(guild, member.topGame)}`,
+    ].join("\n");
+    if ([...rows, row].join("\n\n").length > 1024) break;
+    rows.push(row);
+  }
+
+  return new EmbedBuilder()
+    .setColor(0xb084f0)
+    .setTitle(`🏆 ${title || "Top Members - Last 30 Days"}`)
+    .setDescription(`**${guild.name}** leaderboard for the rolling 30-day window. Ranked by total tracked voice + game time.`)
+    .addFields(
+      {
+        name: "📊 Server total",
+        value: `**${fmtTime(totalMinutes)}** tracked\n👥 ${totals.activeMembers} active members`,
+        inline: true,
+      },
+      {
+        name: "🎙️ Voice",
+        value: `Today **${fmtTime(totals.voiceDay)}**\n7 days **${fmtTime(totals.voiceWeek)}**\n30 days **${fmtTime(totals.voiceMonth)}**`,
+        inline: true,
+      },
+      {
+        name: "🎮 Games",
+        value: `30 days **${fmtTime(totals.gameLookback)}**\nTop role shown per member`,
+        inline: true,
+      },
+      {
+        name: "🏅 Top members",
+        value: rows.join("\n\n") || "_No ranked members yet._",
+      },
+    )
+    .setFooter({ text: `${lookbackLabel || "30d"} stats • live sessions included` })
+    .setTimestamp(new Date());
+}
+
+// Shared builder for the 30-day top members command.
 function buildUserMembers(guild, period) {
   const voice = tracker.userTotals(guild.id, "voice", period).filter((r) => r.minutes > 0);
   const games = tracker.userTotals(guild.id, "game", period).filter((r) => r.minutes > 0);
@@ -61,7 +141,11 @@ function buildUserMembers(guild, period) {
         topGame: g?.topKey || null,
       };
     })
-    .sort((a, b) => b.voiceMinutes - a.voiceMinutes || b.gameMinutes - a.gameMinutes);
+    .sort((a, b) => {
+      const aTotal = a.voiceMinutes + a.gameMinutes;
+      const bTotal = b.voiceMinutes + b.gameMinutes;
+      return bTotal - aTotal || b.voiceMinutes - a.voiceMinutes || b.gameMinutes - a.gameMinutes;
+    });
 }
 
 async function runUsersView(ctx, guild, { period, title, lookbackLabel }) {
@@ -79,22 +163,11 @@ async function runUsersView(ctx, guild, { period, title, lookbackLabel }) {
     activeMembers: members.length,
   };
 
-  const roleByGameKey = (key) => {
-    const roleId = roleMap[guild.id]?.[key];
-    if (!roleId) return null;
-    return guild.roles.cache.get(roleId) || null;
-  };
-
-  const buffer = await renderUsersDefault({
-    guildName: guild.name,
+  const embed = buildStatsEmbed(guild, members, totals, {
     title,
     lookbackLabel,
-    totals,
-    members,
-    guild,
-    roleByGameKey,
   });
-  return sendImage(ctx, buffer, "stats-members.png");
+  return ctx.reply({ embeds: [embed], allowedMentions: { parse: [] } });
 }
 
 async function runVoice30d(ctx, guild) {
@@ -118,6 +191,7 @@ async function runVoice30d(ctx, guild) {
     month: monthTotal,
   };
 
+  const { renderVoice30d } = require("./stats-image");
   const buffer = renderVoice30d({
     guildName: guild.name,
     totals,
@@ -135,12 +209,12 @@ async function statsCmd(ctx) {
   try {
     return await runUsersView(ctx, guild, {
       period: "monthly",
-      title: "Top Members — Last 30 Days",
+      title: "Top Members - Last 30 Days",
       lookbackLabel: "30d",
     });
   } catch (err) {
-    console.error("[stats] render error:", err);
-    const msg = `❌ Failed to render stats: ${err.message}`;
+    console.error("[stats] embed error:", err);
+    const msg = `❌ Failed to build stats: ${err.message}`;
     try { return await ctx.followUp(msg); } catch {}
     try { if (ctx.channel) return await ctx.channel.send(msg); } catch {}
   }
@@ -181,6 +255,7 @@ async function playingCmd(ctx) {
       return id ? guild.roles.cache.get(id) || null : null;
     };
 
+    const { renderPlaying } = require("./stats-image");
     const buffer = await renderPlaying({
       guildName: guild.name,
       rows,

@@ -1,4 +1,4 @@
-# WAV Bot — 10.0 (Role Doctor, aliases, and Unknown Activity Inbox)
+# WAV Bot — 10.0.1 (clean 30-day stats embed)
 
 10.0 adds an owner-only Role Doctor plus activity aliases so mismatched
 presence names can resolve to the right premade role instead of creating
@@ -12,6 +12,18 @@ risked stalling and every restart doubled the rename load. The live
 activity surface now lives in a single auto-updating embed in a dedicated
 stats channel. Roles stay named cleanly (`Playing Rust`), and the embed
 shows time per activity, member count, and who is in it.
+
+## 10.0.1 changelog
+
+**Stats command embed:**
+- `/stats`, `!stats`, `!leaderboard`, and `!lb` now use a native Discord
+  embed instead of uploading a PNG attachment, avoiding Discord REST upload
+  aborts that made the command appear to do nothing.
+- The leaderboard remains a rolling 30-day "Top Members" view with live
+  sessions included, ranked by total tracked voice + game time.
+- Top-game labels now resolve through the tracked Discord role when available,
+  using the role's unicode icon inline when Discord exposes one and a game
+  icon fallback otherwise.
 
 ## 10.0 changelog
 
