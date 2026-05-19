@@ -106,12 +106,12 @@ function buildStatsEmbed(guild, members, totals, { title, lookbackLabel }) {
       },
       {
         name: "🎙️ Voice",
-        value: `Today **${fmtTime(totals.voiceDay)}**\n7 days **${fmtTime(totals.voiceWeek)}**\n30 days **${fmtTime(totals.voiceMonth)}**`,
+        value: `Today **${fmtTime(totals.voiceDay)}**\n7 days **${fmtTime(totals.voiceWeek)}**\n30 days **${fmtTime(totals.voiceMonth)}**\n**Top role shown per member**`,
         inline: true,
       },
       {
         name: "🎮 Games",
-        value: `30 days **${fmtTime(totals.gameLookback)}**\nTop role shown per member`,
+        value: `30 days **${fmtTime(totals.gameLookback)}**`,
         inline: true,
       },
       {
