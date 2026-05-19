@@ -97,7 +97,7 @@ function buildStatsEmbed(guild, members, totals, { title, lookbackLabel }) {
   return new EmbedBuilder()
     .setColor(0xb084f0)
     .setTitle(`🏆 ${title || "Top Members - Last 30 Days"}`)
-    .setDescription(`**${guild.name}** leaderboard for the rolling 30-day window. Ranked by total tracked voice + game time.`)
+    .setDescription(`**${guild.name}** leaderboard for the rolling 30-day window. Ranked by tracked voice activity.`)
     .addFields(
       {
         name: "📊 Server total",
@@ -142,9 +142,7 @@ function buildUserMembers(guild, period) {
       };
     })
     .sort((a, b) => {
-      const aTotal = a.voiceMinutes + a.gameMinutes;
-      const bTotal = b.voiceMinutes + b.gameMinutes;
-      return bTotal - aTotal || b.voiceMinutes - a.voiceMinutes || b.gameMinutes - a.gameMinutes;
+      return b.voiceMinutes - a.voiceMinutes || b.gameMinutes - a.gameMinutes;
     });
 }
 

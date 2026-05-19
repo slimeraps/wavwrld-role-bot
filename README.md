@@ -1,4 +1,4 @@
-# WAV Bot — 10.0.1 (clean 30-day stats embed)
+# WAV Bot — 10.0.2 (stats ranked by voice activity)
 
 10.0 adds an owner-only Role Doctor plus activity aliases so mismatched
 presence names can resolve to the right premade role instead of creating
@@ -12,6 +12,16 @@ risked stalling and every restart doubled the rename load. The live
 activity surface now lives in a single auto-updating embed in a dedicated
 stats channel. Roles stay named cleanly (`Playing Rust`), and the embed
 shows time per activity, member count, and who is in it.
+
+## 10.0.2 changelog
+
+**Stats leaderboard ranked by voice activity:**
+- `/stats`, `!stats`, `!leaderboard`, and `!lb` now rank top members by
+  tracked voice minutes in the last 30 days, with game time as a
+  tiebreaker. Previously the sort key was the sum of voice + game time,
+  which let game-heavy members outrank actually-vocal ones.
+- Game time and per-member top game are still shown on each row; only
+  the ranking key changed.
 
 ## 10.0.1 changelog
 
