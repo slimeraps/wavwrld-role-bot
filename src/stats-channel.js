@@ -1,4 +1,3 @@
-const { EmbedBuilder } = require("discord.js");
 const { config } = require("./config");
 const { stripTimerPrefix, formatTimerMinutes, sleep } = require("./util");
 const { sendMonitoring } = require("./monitoring");
@@ -7,7 +6,7 @@ const tracker = require("./tracker");
 
 const STATS_CHANNEL_ID = process.env.STATS_CHANNEL_ID || config.statsChannelId || "";
 const MAX_MEMBER_NAMES_PER_ROW = 3;
-const EMBED_COLOR = 0xb084f0;
+const MAX_MESSAGE_LEN = 2000;
 
 let lastRenderHash = new Map(); // guildId -> hash, skip edit when nothing changed
 
@@ -58,15 +57,16 @@ function collectRows(guild) {
   return rows;
 }
 
-// Render a section as a fenced code block so columns line up in monospace.
+// Render a section as monospace lines (no code fence — caller wraps the
+// whole message in one fence so the columns align across sections).
 // Each row: TIME (right) │ NAME (left, padded) │ COUNT │ MEMBERS (truncated).
-function buildSectionBlock(items) {
-  if (items.length === 0) return null;
+function buildSectionLines(items) {
+  if (items.length === 0) return [];
 
   const TIME_W = Math.max(...items.map((r) => r.timeStr.length), 5);
   const NAME_W = Math.max(...items.map((r) => r.display.length), 6);
 
-  const lines = items.map((r) => {
+  return items.map((r) => {
     const time = r.timeStr.padStart(TIME_W);
     const name = r.display.padEnd(NAME_W);
     const count = `(${r.count})`;
@@ -75,16 +75,9 @@ function buildSectionBlock(items) {
     const who = shown.length > 0 ? `   ${shown.join(", ")}${extra}` : "";
     return `${time}    ${name}    ${count}${who}`;
   });
-
-  // Trim to embed field limit (1024 chars including the ``` fences).
-  const FENCE_OVERHEAD = 8; // ```\n + \n```
-  const MAX = 1024 - FENCE_OVERHEAD;
-  let body = lines.join("\n");
-  if (body.length > MAX) body = body.slice(0, MAX - 1) + "…";
-  return "```\n" + body + "\n```";
 }
 
-function buildEmbed(guild, rows) {
+function buildContent(guild, rows) {
   const sections = [
     { key: "playing", title: "🎮  Playing" },
     { key: "voice", title: "🎤  Voice" },
@@ -93,27 +86,27 @@ function buildEmbed(guild, rows) {
     { key: "other", title: "🟣  Other" },
   ];
 
-  const embed = new EmbedBuilder()
-    .setColor(EMBED_COLOR)
-    .setTitle(`⏱  Live Activity — ${guild.name}`)
-    .setTimestamp(new Date())
-    .setFooter({ text: "Updates every 15 seconds" });
+  const header = `## ⏱  Live Activity — ${guild.name}`;
+  const footer = `-# Updates every 15 seconds · <t:${Math.floor(Date.now() / 1000)}:R>`;
 
-  let anyContent = false;
+  const sectionTexts = [];
   for (const { key, title } of sections) {
     const items = rows[key];
     if (!items || items.length === 0) continue;
-    const block = buildSectionBlock(items);
-    if (!block) continue;
-    anyContent = true;
-    embed.addFields({ name: title, value: block });
+    const lines = buildSectionLines(items);
+    if (lines.length === 0) continue;
+    sectionTexts.push(`**${title}**\n\`\`\`\n${lines.join("\n")}\n\`\`\``);
   }
 
-  if (!anyContent) {
-    embed.setDescription("_No tracked activity right now._");
+  if (sectionTexts.length === 0) {
+    return `${header}\n_No tracked activity right now._\n${footer}`;
   }
 
-  return embed;
+  let content = `${header}\n${sectionTexts.join("\n")}\n${footer}`;
+  if (content.length > MAX_MESSAGE_LEN) {
+    content = content.slice(0, MAX_MESSAGE_LEN - 1) + "…";
+  }
+  return content;
 }
 
 function hashRows(rows) {
@@ -158,14 +151,14 @@ async function updateStatsEmbed(client) {
     const hash = hashRows(rows);
     if (lastRenderHash.get(guild.id) === hash && statsEmbeds[guild.id]) continue;
 
-    const embed = buildEmbed(guild, rows);
+    const content = buildContent(guild, rows);
 
     try {
       const existing = await fetchOrCreateMessage(channel, guild.id);
       if (existing) {
-        await existing.edit({ embeds: [embed] });
+        await existing.edit({ content, embeds: [] });
       } else {
-        const sent = await channel.send({ embeds: [embed] });
+        const sent = await channel.send({ content });
         statsEmbeds[guild.id] = sent.id;
         saveData();
       }

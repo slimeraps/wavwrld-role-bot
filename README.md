@@ -1,4 +1,4 @@
-# WAV Bot — 10.0.2 (stats ranked by voice activity)
+# WAV Bot — 10.0.3 (stats channel: plain text instead of embed)
 
 10.0 adds an owner-only Role Doctor plus activity aliases so mismatched
 presence names can resolve to the right premade role instead of creating
@@ -12,6 +12,20 @@ risked stalling and every restart doubled the rename load. The live
 activity surface now lives in a single auto-updating embed in a dedicated
 stats channel. Roles stay named cleanly (`Playing Rust`), and the embed
 shows time per activity, member count, and who is in it.
+
+## 10.0.3 changelog
+
+**Live activity render is now plain text, not an embed:**
+- The stats channel's auto-updating "Live Activity" message dropped the
+  embed wrapper. Discord renders code blocks slightly wider outside an
+  embed, so rows with several members no longer wrap mid-line into an
+  awkward second row.
+- Layout is otherwise unchanged: monospace columns (time · activity ·
+  count · members), grouped under 🎮 Playing / 🎤 Voice / 🎵 Listening /
+  📺 Watching / 🟣 Other, with a relative timestamp footer.
+- The 15-second update loop, change-hash dedupe, and persisted message
+  ID are unchanged — the bot edits the same message in place and will
+  clear the previous embed on the first tick after upgrade.
 
 ## 10.0.2 changelog
 
