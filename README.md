@@ -1,4 +1,4 @@
-# WAV Bot — 10.1.1 (stats PNG with hard upload timeout)
+# WAV Bot — 10.1.2 (stats PNG via channel.send, 20 s ceiling)
 
 10.0 adds an owner-only Role Doctor plus activity aliases so mismatched
 presence names can resolve to the right premade role instead of creating
@@ -12,6 +12,16 @@ risked stalling and every restart doubled the rename load. The live
 activity surface now lives in a single auto-updating embed in a dedicated
 stats channel. Roles stay named cleanly (`Playing Rust`), and the embed
 shows time per activity, member count, and who is in it.
+
+## 10.1.2
+
+- `!stats` / `/stats` PNG now uploads via `channel.send` instead of the
+  interaction webhook. The webhook PATCH was intermittently stalling the
+  multipart upload (`This operation was aborted` → `upload-timeout`),
+  forcing the embed fallback on every invocation.
+- Upload timeout ceiling raised from 12 s to 20 s.
+- Deferred slash-command replies get a short tidy message ("📊 Stats above ⬆️")
+  so Discord doesn't keep showing "thinking..." after the channel send lands.
 
 ## 10.1.1 changelog
 

@@ -10,7 +10,7 @@ function displayNameFor(guild, userId) {
   return `user ${userId.slice(-4)}`;
 }
 
-const UPLOAD_TIMEOUT_MS = 12_000;
+const UPLOAD_TIMEOUT_MS = 20_000;
 
 // Hard timeout wrapper — Discord intermittently leaves multipart uploads
 // hung mid-stream; undici doesn't always surface that as a thrown error, so
@@ -33,11 +33,21 @@ async function sendImage(ctx, buffer, name) {
     files: [new AttachmentBuilder(buffer, { name })],
     allowedMentions: { parse: [] },
   };
-  // One attempt, hard-timed. If Discord aborts or stalls the multipart
-  // upload, we surface that as a throw and let the caller fall back to the
-  // embed — retrying with the same payload just queues more stuck requests
-  // behind the first one and freezes the bot.
-  return withUploadTimeout(Promise.resolve(ctx.reply(payload)), "reply");
+  // Send via the channel rather than ctx.reply so the upload isn't bound to
+  // the interaction token. The interaction-webhook PATCH (editReply) was
+  // intermittently stalling the multipart upload; channel.send hits a
+  // different endpoint that doesn't have this problem.
+  const sendPromise = ctx.channel
+    ? ctx.channel.send(payload)
+    : ctx.reply(payload);
+  const result = await withUploadTimeout(Promise.resolve(sendPromise), "send");
+
+  // Best-effort tidy of the deferred slash-command reply so Discord doesn't
+  // leave "thinking..." showing. Don't await — failure here is harmless.
+  if (ctx.type === "interaction") {
+    ctx.reply({ content: "📊 Stats above ⬆️", allowedMentions: { parse: [] } }).catch(() => {});
+  }
+  return result;
 }
 
 const sumLeaderboard = (guildId, type, period) =>
