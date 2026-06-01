@@ -2,6 +2,7 @@ const { AttachmentBuilder, EmbedBuilder } = require("discord.js");
 const tracker = require("./tracker");
 const { roleMap } = require("./state");
 const { stripTimerPrefix } = require("./util");
+const { sendMonitoring } = require("./monitoring");
 
 function displayNameFor(guild, userId) {
   const m = guild.members.cache.get(userId);
@@ -161,41 +162,33 @@ async function runUsersView(ctx, guild, { period, title, lookbackLabel }) {
     activeMembers: members.length,
   };
 
-  const embed = buildStatsEmbed(guild, members, totals, {
-    title,
-    lookbackLabel,
-  });
-  return ctx.reply({ embeds: [embed], allowedMentions: { parse: [] } });
-}
-
-async function runVoice30d(ctx, guild) {
-  const month = tracker.userTotals(guild.id, "voice", "monthly").filter((r) => r.minutes > 0);
-  if (month.length === 0) {
-    return ctx.reply("📭 No voice activity tracked in the last 30 days.");
+  // Try PNG first; fall back to the embed if rendering or uploading fails.
+  // The PNG used to "crash" pre-10.0.1 because Discord intermittently aborts
+  // multipart uploads — sendImage retries, but if it gives up the user used
+  // to see nothing. Now we ping monitoring and reply with the embed instead.
+  try {
+    const { renderUsersDefault } = require("./stats-image");
+    const buffer = await renderUsersDefault({
+      guildName: guild.name,
+      title,
+      lookbackLabel,
+      totals,
+      members,
+      guild,
+      roleByGameKey: (key) => roleForGameKey(guild, key),
+    });
+    return await sendImage(ctx, buffer, "stats-members.png");
+  } catch (err) {
+    console.warn(`[stats] PNG path failed (${err.message}); falling back to embed`);
+    sendMonitoring(`⚠️ /stats PNG fallback to embed in **${guild.name}**: ${err.message}`).catch(() => {});
+    const embed = buildStatsEmbed(guild, members, totals, { title, lookbackLabel });
+    try {
+      return await ctx.reply({ embeds: [embed], allowedMentions: { parse: [] } });
+    } catch {
+      try { return await ctx.followUp({ embeds: [embed], allowedMentions: { parse: [] } }); } catch {}
+      if (ctx.channel) return ctx.channel.send({ embeds: [embed], allowedMentions: { parse: [] } });
+    }
   }
-  const monthTotal = month.reduce((s, r) => s + r.minutes, 0);
-
-  const members = month.map((r) => ({
-    userId: r.userId,
-    displayName: displayNameFor(guild, r.userId),
-    minutes: r.minutes,
-    percent: Math.round((r.minutes / monthTotal) * 100),
-  }));
-
-  const totals = {
-    memberCount: month.length,
-    day: sumLeaderboard(guild.id, "voice", "daily"),
-    week: sumLeaderboard(guild.id, "voice", "weekly"),
-    month: monthTotal,
-  };
-
-  const { renderVoice30d } = require("./stats-image");
-  const buffer = renderVoice30d({
-    guildName: guild.name,
-    totals,
-    members,
-  });
-  return sendImage(ctx, buffer, "stats-voice.png");
 }
 
 async function statsCmd(ctx) {
