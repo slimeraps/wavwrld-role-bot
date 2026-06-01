@@ -185,7 +185,8 @@ async function runUsersView(ctx, guild, { period, title, lookbackLabel }) {
       guild,
       roleByGameKey: (key) => roleForGameKey(guild, key),
     });
-    return await sendImage(ctx, buffer, "stats-members.png");
+    console.log(`[stats] render produced ${buffer.length} bytes (jpeg)`);
+    return await sendImage(ctx, buffer, "stats-members.jpg");
   } catch (err) {
     console.warn(`[stats] PNG path failed (${err.message}); falling back to embed`);
     sendMonitoring(`⚠️ /stats PNG fallback to embed in **${guild.name}**: ${err.message}`).catch(() => {});

@@ -256,7 +256,7 @@ async function renderUsersDefault({ guildName, title, lookbackLabel, totals, mem
     });
   });
 
-  return canvas.toBuffer("image/png");
+  return canvas.toBuffer("image/jpeg");
 }
 
 // ── /stats voice — top users by 30d voice minutes ─────────────────────

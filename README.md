@@ -1,4 +1,4 @@
-# WAV Bot — 10.1.2 (stats PNG via channel.send, 20 s ceiling)
+# WAV Bot — 10.1.3 (stats output as JPEG)
 
 10.0 adds an owner-only Role Doctor plus activity aliases so mismatched
 presence names can resolve to the right premade role instead of creating
@@ -12,6 +12,16 @@ risked stalling and every restart doubled the rename load. The live
 activity surface now lives in a single auto-updating embed in a dedicated
 stats channel. Roles stay named cleanly (`Playing Rust`), and the embed
 shows time per activity, member count, and who is in it.
+
+## 10.1.3
+
+- `!stats` / `/stats` PNG output switched to JPEG. The PNG buffer from
+  `@napi-rs/canvas` was reliably stalling Discord's multipart upload (both
+  on `interaction.editReply` and `channel.send`) at the 12 s / 20 s ceiling.
+  `!playing` uses the same renderer in PNG and works, so the issue is
+  specific to the stats render output. JPEG sidesteps it.
+- One-line log of the produced buffer size to `[stats]` so we can correlate
+  future upload behaviour with payload size.
 
 ## 10.1.2
 
