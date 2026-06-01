@@ -10,36 +10,34 @@ function displayNameFor(guild, userId) {
   return `user ${userId.slice(-4)}`;
 }
 
-function isTransientNetworkError(err) {
-  const msg = String(err?.message || "");
-  const code = err?.code || "";
-  return /other side closed|aborted|ECONNRESET|UND_ERR_SOCKET/i.test(msg)
-    || code === "ECONNRESET" || code === "UND_ERR_SOCKET";
+const UPLOAD_TIMEOUT_MS = 12_000;
+
+// Hard timeout wrapper — Discord intermittently leaves multipart uploads
+// hung mid-stream; undici doesn't always surface that as a thrown error, so
+// the inner promise can wait forever. Without this the whole command handler
+// freezes and queues up behind every subsequent !stats invocation.
+function withUploadTimeout(promise, label) {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => {
+      reject(new Error(`upload-timeout:${label} after ${UPLOAD_TIMEOUT_MS}ms`));
+    }, UPLOAD_TIMEOUT_MS);
+    promise.then(
+      (v) => { clearTimeout(t); resolve(v); },
+      (e) => { clearTimeout(t); reject(e); },
+    );
+  });
 }
 
 async function sendImage(ctx, buffer, name) {
-  const makePayload = () => ({
+  const payload = {
     files: [new AttachmentBuilder(buffer, { name })],
     allowedMentions: { parse: [] },
-  });
-  try {
-    return await ctx.reply(makePayload());
-  } catch (err) {
-    if (!isTransientNetworkError(err)) throw err;
-    console.warn(`[stats] upload glitched (${err.message}), retrying via fallback send...`);
-    try {
-      const sent = await ctx.followUp(makePayload());
-      console.log("[stats] fallback upload succeeded");
-      return sent;
-    } catch (err2) {
-      if (ctx.channel) {
-        const sent = await ctx.channel.send(makePayload());
-        console.log("[stats] channel fallback upload succeeded");
-        return sent;
-      }
-      throw err2;
-    }
-  }
+  };
+  // One attempt, hard-timed. If Discord aborts or stalls the multipart
+  // upload, we surface that as a throw and let the caller fall back to the
+  // embed — retrying with the same payload just queues more stuck requests
+  // behind the first one and freezes the bot.
+  return withUploadTimeout(Promise.resolve(ctx.reply(payload)), "reply");
 }
 
 const sumLeaderboard = (guildId, type, period) =>

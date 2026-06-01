@@ -1,4 +1,4 @@
-# WAV Bot — 10.1 (stats PNG returns with embed fallback)
+# WAV Bot — 10.1.1 (stats PNG with hard upload timeout)
 
 10.0 adds an owner-only Role Doctor plus activity aliases so mismatched
 presence names can resolve to the right premade role instead of creating
@@ -12,6 +12,24 @@ risked stalling and every restart doubled the rename load. The live
 activity surface now lives in a single auto-updating embed in a dedicated
 stats channel. Roles stay named cleanly (`Playing Rust`), and the embed
 shows time per activity, member count, and who is in it.
+
+## 10.1.1 changelog
+
+**Stop the upload-retry from freezing the bot:**
+- 10.1 brought the stats PNG back. First production try revealed the
+  actual failure: `ctx.reply()` with the attachment throws "This
+  operation was aborted" (Discord rejecting the multipart upload), and
+  the followUp retry then **hangs indefinitely** instead of throwing
+  again. Every subsequent !stats invocation queued behind the stuck
+  request and froze too — same lockup the user remembered as "the bot
+  keeps crashing."
+- `sendImage` is now a single attempt wrapped in a hard 12 s timeout.
+  No more retry-with-same-payload; if Discord aborts or stalls the
+  upload, the error propagates straight to the embed fallback in
+  `runUsersView`. Worst case: user sees the embed instead of the PNG.
+- Removed the `isTransientNetworkError` retry classifier — "aborted"
+  isn't a blip, it's Discord refusing the upload, and retrying just
+  multiplied the lockup.
 
 ## 10.1 changelog
 
