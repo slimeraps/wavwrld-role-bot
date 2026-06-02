@@ -4,12 +4,11 @@ const { sendMonitoring } = require("./monitoring");
 const { roleMap, voiceChannelRoles, statsEmbeds, statsImageEmbeds, saveData } = require("./state");
 const tracker = require("./tracker");
 const { LIVE_SECTIONS } = require("./stats-image");
+const { buildLiveActivityEmbed } = require("./stats");
 
 const STATS_CHANNEL_ID = process.env.STATS_CHANNEL_ID || config.statsChannelId || "";
-const MAX_MEMBER_NAMES_PER_ROW = 3;
-const MAX_MESSAGE_LEN = 2000;
 
-let lastRenderHash = new Map(); // guildId -> hash, skip edit when nothing changed
+let lastLiveUrl = new Map(); // guildId -> last URL we sent, skip edit when bucket unchanged
 
 function categorize(roleName) {
   const clean = stripTimerPrefix(roleName);
@@ -58,70 +57,6 @@ function collectRows(guild) {
   return rows;
 }
 
-// Render a section as monospace lines (no code fence — caller wraps the
-// whole message in one fence so the columns align across sections).
-// Each row: TIME (right) │ NAME (left, padded) │ COUNT │ MEMBERS (truncated).
-function buildSectionLines(items) {
-  if (items.length === 0) return [];
-
-  const TIME_W = Math.max(...items.map((r) => r.timeStr.length), 5);
-  const NAME_W = Math.max(...items.map((r) => r.display.length), 6);
-
-  return items.map((r) => {
-    const time = r.timeStr.padStart(TIME_W);
-    const name = r.display.padEnd(NAME_W);
-    const count = `(${r.count})`;
-    const shown = r.memberNames.slice(0, MAX_MEMBER_NAMES_PER_ROW);
-    const extra = r.memberNames.length > shown.length ? ` +${r.memberNames.length - shown.length}` : "";
-    const who = shown.length > 0 ? `   ${shown.join(", ")}${extra}` : "";
-    return `${time}    ${name}    ${count}${who}`;
-  });
-}
-
-function buildContent(guild, rows) {
-  const sections = [
-    { key: "playing", title: "🎮  Playing" },
-    { key: "voice", title: "🎤  Voice" },
-    { key: "listening", title: "🎵  Listening" },
-    { key: "watching", title: "📺  Watching" },
-    { key: "other", title: "🟣  Other" },
-  ];
-
-  const header = `## ⏱  Live Activity — ${guild.name}`;
-  const footer = `-# Updates every 15 seconds · <t:${Math.floor(Date.now() / 1000)}:R>`;
-
-  const sectionTexts = [];
-  for (const { key, title } of sections) {
-    const items = rows[key];
-    if (!items || items.length === 0) continue;
-    const lines = buildSectionLines(items);
-    if (lines.length === 0) continue;
-    sectionTexts.push(`**${title}**\n\`\`\`\n${lines.join("\n")}\n\`\`\``);
-  }
-
-  if (sectionTexts.length === 0) {
-    return `${header}\n_No tracked activity right now._\n${footer}`;
-  }
-
-  let content = `${header}\n${sectionTexts.join("\n")}\n${footer}`;
-  if (content.length > MAX_MESSAGE_LEN) {
-    content = content.slice(0, MAX_MESSAGE_LEN - 1) + "…";
-  }
-  return content;
-}
-
-function hashRows(rows) {
-  // Snapshot only fields the embed actually displays — avoids edits when only
-  // member name ordering or role-id internals change.
-  const parts = [];
-  for (const key of Object.keys(rows).sort()) {
-    for (const row of rows[key]) {
-      parts.push(`${key}|${row.display}|${row.minutes}|${row.count}|${row.memberNames.join(",")}`);
-    }
-  }
-  return parts.join("\n");
-}
-
 async function fetchOrCreateMessage(channel, cache, guildId) {
   const messageId = cache[guildId];
   if (messageId) {
@@ -148,25 +83,33 @@ async function updateStatsEmbed(client) {
     }
     if (!channel || !channel.isTextBased() || channel.guild?.id !== guild.id) continue;
 
-    const rows = collectRows(guild);
-    const hash = hashRows(rows);
-    if (lastRenderHash.get(guild.id) === hash && statsEmbeds[guild.id]) continue;
-
-    const content = buildContent(guild, rows);
+    const embed = buildLiveActivityEmbed(guild);
+    if (!embed) {
+      // No panel URL available — log once per process and skip.
+      if (!updateStatsEmbed._warned) {
+        console.warn("[stats-channel] no panel URL — live activity image disabled");
+        updateStatsEmbed._warned = true;
+      }
+      continue;
+    }
+    // Cache-bust URL changes every 15 s; skip edit within the same bucket.
+    const currentUrl = embed.data.image?.url;
+    if (lastLiveUrl.get(guild.id) === currentUrl && statsEmbeds[guild.id]) continue;
 
     try {
       const existing = await fetchOrCreateMessage(channel, statsEmbeds, guild.id);
       if (existing) {
-        await existing.edit({ content, embeds: [] });
+        // content: "" clears the old text body from the pre-10.4 format.
+        await existing.edit({ content: "", embeds: [embed] });
       } else {
-        const sent = await channel.send({ content });
+        const sent = await channel.send({ embeds: [embed], allowedMentions: { parse: [] } });
         statsEmbeds[guild.id] = sent.id;
         saveData();
       }
-      lastRenderHash.set(guild.id, hash);
+      lastLiveUrl.set(guild.id, currentUrl);
     } catch (err) {
-      console.error(`[stats-channel] failed to update embed in ${guild.name}: ${err.message}`);
-      await sendMonitoring(`❌ stats embed update failed in **${guild.name}**: ${err.message}`);
+      console.error(`[stats-channel] failed to update live embed in ${guild.name}: ${err.message}`);
+      await sendMonitoring(`❌ live embed update failed in **${guild.name}**: ${err.message}`);
     }
   }
 }
