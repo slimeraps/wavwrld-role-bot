@@ -3,7 +3,7 @@ const { token } = require("./src/config");
 const { register } = require("./src/events");
 const { cleanupEmptyManagedRoles, handleCleanupCmd } = require("./src/cleanup");
 const { checkPromotedRolesEmpty } = require("./src/promotion");
-const { updateStatsEmbed } = require("./src/stats-channel");
+const { updateStatsEmbed, updateStatsImageEmbed } = require("./src/stats-channel");
 const { startPanel } = require("./src/panel");
 const { flushPendingSave } = require("./src/state");
 const { sendMonitoring } = require("./src/monitoring");
@@ -26,14 +26,20 @@ setInterval(async () => {
   }
 }, 30 * 60 * 1000);
 
-// Discord allows ~5 message edits per 5s per channel. We tick every 15s and the
-// embed only edits when content actually changed (hash check), so we stay well
-// under the limit even with frequent activity changes.
+// Discord allows ~5 message edits per 5s per channel. Live activity ticks once
+// per 15s (4 edits/min); !stats ticks once per 60s (1 edit/min). Both updaters
+// skip the edit when the URL bucket is unchanged, keeping us well under limits.
 setInterval(() => {
   updateStatsEmbed(client).catch((err) => {
-    console.warn("[stats-channel] interval update errored:", err.message);
+    console.warn("[stats-channel] live interval errored:", err.message);
   });
 }, 15 * 1000);
+
+setInterval(() => {
+  updateStatsImageEmbed(client).catch((err) => {
+    console.warn("[stats-channel] !stats interval errored:", err.message);
+  });
+}, 60 * 1000);
 
 function maintenanceContext() {
   const log = async (content) => {
