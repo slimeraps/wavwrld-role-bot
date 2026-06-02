@@ -168,6 +168,16 @@ function fillBackground(ctx, w, h) {
   ctx.fillRect(0, 0, w, h);
 }
 
+// Diagonal pink-to-blue gradient background for the redesigned !stats image.
+// Endpoints from PALETTE.bgGradFrom / bgGradTo. Draws across the entire canvas.
+function drawCanvasBackground(ctx, w, h) {
+  const grad = ctx.createLinearGradient(0, 0, w, h);
+  grad.addColorStop(0, PALETTE.bgGradFrom);
+  grad.addColorStop(1, PALETTE.bgGradTo);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, w, h);
+}
+
 // Top Members list with role icons next to each top game.
 // `title` lets us reuse the same layout for "Last 30 Days" and "All Time" views.
 async function renderUsersDefault({ guildName, title, lookbackLabel, totals, members, guild, roleByGameKey }) {
