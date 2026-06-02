@@ -178,6 +178,86 @@ function drawCanvasBackground(ctx, w, h) {
   ctx.fillRect(0, 0, w, h);
 }
 
+// Render one podium card (used 3x by renderUsersDefault).
+// All coordinates and sizes are *already scaled* (caller multiplied by SCALE).
+//
+// opts:
+//   rankLabel:    string, e.g. "1ST" / "2ND" / "3RD"
+//   rankColor:    PALETTE.gold | silver | bronze
+//   icon:         loaded Image | null  (Discord role icon)
+//   name:         string (display name)
+//   gameLabel:    string (e.g. "Counter-Strike 2 · 38h"), or null
+//   hoursLabel:   string (e.g. "47h")
+//   isPrimary:    boolean — true for the gold #1 center card
+function drawPodCard(ctx, x, y, w, h, opts) {
+  // Card body.
+  const fill = opts.isPrimary ? PALETTE.usersPanelPrimary : PALETTE.usersPanel;
+  drawPanel(ctx, x, y, w, h, fill);
+  if (opts.isPrimary) {
+    ctx.strokeStyle = PALETTE.pinkBorder;
+    ctx.lineWidth = 1 * SCALE;
+    roundRect(ctx, x + 0.5, y + 0.5, w - 1, h - 1, RADIUS * SCALE);
+    ctx.stroke();
+  }
+
+  const cx = x + w / 2;
+  let cy = y + 22 * SCALE;
+
+  // Rank label, centered.
+  ctx.fillStyle = opts.rankColor;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "alphabetic";
+  ctx.font = `bold ${12 * SCALE}px UI Bold`;
+  ctx.fillText(opts.rankLabel, cx, cy);
+  cy += 14 * SCALE;
+
+  // Round-clipped role icon.
+  const iconSize = (opts.isPrimary ? 80 : 64) * SCALE;
+  cy += iconSize / 2; // shift to icon center
+  if (opts.icon) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, iconSize / 2, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.clip();
+    ctx.drawImage(opts.icon, cx - iconSize / 2, cy - iconSize / 2, iconSize, iconSize);
+    ctx.restore();
+  } else {
+    // No icon — draw a subtle filled circle so the layout doesn't collapse.
+    ctx.beginPath();
+    ctx.arc(cx, cy, iconSize / 2, 0, Math.PI * 2);
+    ctx.fillStyle = PALETTE.usersBorder;
+    ctx.fill();
+  }
+  cy += iconSize / 2 + 14 * SCALE;
+
+  // Name (truncated to card width).
+  const nameSize = (opts.isPrimary ? 18 : 16) * SCALE;
+  const nameFont = `bold ${nameSize}px UI Bold`;
+  const nameText = truncate(ctx, opts.name, w - 24 * SCALE, nameFont);
+  ctx.font = nameFont;
+  ctx.fillStyle = PALETTE.usersText;
+  ctx.fillText(nameText, cx, cy);
+  cy += 6 * SCALE + 12 * SCALE; // line height for the 16-18px name
+
+  // Game label (or skip).
+  if (opts.gameLabel) {
+    const gameFont = `${12 * SCALE}px UI`;
+    const gameText = truncate(ctx, opts.gameLabel, w - 24 * SCALE, gameFont);
+    ctx.font = gameFont;
+    ctx.fillStyle = PALETTE.usersMuted;
+    ctx.fillText(gameText, cx, cy);
+  }
+  cy += 14 * SCALE + 12 * SCALE;
+
+  // Hours value, large.
+  const hoursSize = (opts.isPrimary ? 26 : 20) * SCALE;
+  const hoursColor = opts.isPrimary ? PALETTE.pink : PALETTE.blue;
+  ctx.font = `bold ${hoursSize}px UI Bold`;
+  ctx.fillStyle = hoursColor;
+  ctx.fillText(opts.hoursLabel, cx, cy);
+}
+
 // Top Members list with role icons next to each top game.
 // `title` lets us reuse the same layout for "Last 30 Days" and "All Time" views.
 async function renderUsersDefault({ guildName, title, lookbackLabel, totals, members, guild, roleByGameKey }) {
