@@ -258,6 +258,102 @@ function drawPodCard(ctx, x, y, w, h, opts) {
   ctx.fillText(opts.hoursLabel, cx, cy);
 }
 
+// Render one row of the 4-10 list with a pink-ghost progress bar background.
+// All coordinates and sizes are already scaled by the caller.
+//
+// opts:
+//   rank:        number (4..10)
+//   icon:        loaded Image | null
+//   name:        string
+//   gameLabel:   string (e.g. "League of Legends · 12h") or null
+//   hoursLabel:  string (e.g. "19h")
+//   barPct:      0..1, width of the ghost progress bar relative to row width
+function drawProgressRow(ctx, x, y, w, h, opts) {
+  // Clip to row rect so the bar can't escape (it shouldn't anyway, defensive).
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y, w, h);
+  ctx.clip();
+
+  // Progress bar (background fill, left-aligned).
+  if (opts.barPct > 0) {
+    ctx.fillStyle = PALETTE.pinkGhost;
+    ctx.fillRect(x, y, w * Math.min(1, opts.barPct), h);
+  }
+
+  const innerPad = 18 * SCALE;
+  const cy = y + h / 2;
+  ctx.textBaseline = "middle";
+
+  // Rank number — small, dim, fixed-width gutter.
+  const rankGutter = 28 * SCALE;
+  ctx.textAlign = "center";
+  ctx.font = `bold ${13 * SCALE}px UI Bold`;
+  ctx.fillStyle = PALETTE.usersDim;
+  ctx.fillText(String(opts.rank), x + innerPad + rankGutter / 2, cy);
+
+  // Role icon (round-clipped), 24px logical.
+  const iconSize = 24 * SCALE;
+  const iconX = x + innerPad + rankGutter + 10 * SCALE;
+  const iconY = cy - iconSize / 2;
+  if (opts.icon) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(iconX + iconSize / 2, iconY + iconSize / 2, iconSize / 2, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.clip();
+    ctx.drawImage(opts.icon, iconX, iconY, iconSize, iconSize);
+    ctx.restore();
+  } else {
+    ctx.beginPath();
+    ctx.arc(iconX + iconSize / 2, iconY + iconSize / 2, iconSize / 2, 0, Math.PI * 2);
+    ctx.fillStyle = PALETTE.usersBorder;
+    ctx.fill();
+  }
+
+  // Layout for name + game + hours.
+  ctx.textAlign = "left";
+  const hoursLabel = opts.hoursLabel || "";
+  ctx.font = `bold ${14 * SCALE}px UI Bold`;
+  const hoursWidth = ctx.measureText(hoursLabel).width;
+  const hoursRightX = x + w - innerPad;
+  const hoursLeftX = hoursRightX - hoursWidth;
+
+  // Hours (right-aligned, blue).
+  ctx.textAlign = "right";
+  ctx.fillStyle = PALETTE.blue;
+  ctx.fillText(hoursLabel, hoursRightX, cy);
+
+  // Available horizontal range for name + game.
+  const textStartX = iconX + iconSize + 10 * SCALE;
+  const textEndX = hoursLeftX - 12 * SCALE;
+  const textRange = textEndX - textStartX;
+
+  // Name takes the left ~45% of the available range; game takes the right ~55%.
+  const nameMax = Math.max(0, textRange * 0.45);
+  const gameMax = Math.max(0, textRange * 0.55 - 8 * SCALE);
+
+  // Name (left).
+  ctx.textAlign = "left";
+  const nameFont = `bold ${14 * SCALE}px UI Bold`;
+  const nameText = truncate(ctx, opts.name, nameMax, nameFont);
+  ctx.font = nameFont;
+  ctx.fillStyle = PALETTE.usersText;
+  ctx.fillText(nameText, textStartX, cy);
+
+  // Game label (left-aligned, starts after the name's max gutter).
+  if (opts.gameLabel) {
+    const gameFont = `${12 * SCALE}px UI`;
+    const gameStart = textStartX + nameMax + 8 * SCALE;
+    const gameText = truncate(ctx, opts.gameLabel, gameMax, gameFont);
+    ctx.font = gameFont;
+    ctx.fillStyle = PALETTE.usersMuted;
+    ctx.fillText(gameText, gameStart, cy);
+  }
+
+  ctx.restore();
+}
+
 // Top Members list with role icons next to each top game.
 // `title` lets us reuse the same layout for "Last 30 Days" and "All Time" views.
 async function renderUsersDefault({ guildName, title, lookbackLabel, totals, members, guild, roleByGameKey }) {
