@@ -7,3 +7,5 @@ roles.json
 *.bat
 .claude/
 preview.jpg
+preview-live.jpg
+preview-live-empty.jpg
