@@ -10,6 +10,7 @@ try {
 }
 
 const PALETTE = {
+  // Legacy tokens — still used by renderVoice30d / renderPlaying.
   bg: "#1e1f22",
   panel: "#2b2d31",
   panel2: "#232428",
@@ -21,10 +22,24 @@ const PALETTE = {
   green: "#23a55a",
   yellow: "#fee75c",
   red: "#f23f42",
+  voice: "#43a25a",
+  // Rank colors — used by both legacy and redesigned renderers.
   gold: "#e5b25d",
   silver: "#b3b9c5",
   bronze: "#c47e58",
-  voice: "#43a25a",
+  // New tokens for the redesigned renderUsersDefault.
+  bgGradFrom: "#7a4e62",
+  bgGradTo: "#4d5f7a",
+  usersText: "#ece6f0",
+  usersMuted: "#a39cb0",
+  usersDim: "#6e6878",
+  usersPanel: "#1d1c25",
+  usersPanelPrimary: "#251c26",
+  usersBorder: "#2a2735",
+  pink: "#ffa6c9",
+  pinkGhost: "rgba(255, 166, 201, 0.08)",
+  pinkBorder: "rgba(255, 166, 201, 0.45)",
+  blue: "#9ec5ff",
 };
 
 const PADDING = 20;
@@ -32,6 +47,11 @@ const GAP = 12;
 const WIDTH = 720;
 const RADIUS = 8;
 const ICON_SIZE = 18;
+
+// Density multiplier for renderUsersDefault. Discord caps embed image *display*
+// width around 550-600px on desktop, so we render at 2x source and let the
+// downscale yield sharper text on HiDPI displays.
+const SCALE = 2;
 
 // In-memory icon cache keyed by Discord role.icon hash. Hashes change when an
 // admin uploads a new icon, so cached entries are valid until that happens.
