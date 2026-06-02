@@ -1,8 +1,9 @@
 const { config } = require("./config");
 const { stripTimerPrefix, formatTimerMinutes, sleep } = require("./util");
 const { sendMonitoring } = require("./monitoring");
-const { roleMap, voiceChannelRoles, statsEmbeds, saveData } = require("./state");
+const { roleMap, voiceChannelRoles, statsEmbeds, statsImageEmbeds, saveData } = require("./state");
 const tracker = require("./tracker");
+const { LIVE_SECTIONS } = require("./stats-image");
 
 const STATS_CHANNEL_ID = process.env.STATS_CHANNEL_ID || config.statsChannelId || "";
 const MAX_MEMBER_NAMES_PER_ROW = 3;
@@ -193,4 +194,76 @@ async function migrateStaleTimerPrefixes(client) {
   }
 }
 
-module.exports = { updateStatsEmbed, migrateStaleTimerPrefixes, collectRows };
+// Re-export of the @napi-rs/canvas image loader. We use it to pre-resolve role
+// icons before handing the snapshot to renderLiveActivity. Per-process icon
+// cache keyed by Discord role.icon hash; invalidates on icon change.
+const { loadImage } = require("@napi-rs/canvas");
+
+const liveIconCache = new Map(); // role.icon hash -> Image | null
+
+async function loadRoleIcon(role) {
+  if (!role || !role.icon) return null;
+  const key = role.icon;
+  if (liveIconCache.has(key)) return liveIconCache.get(key);
+  const url = role.iconURL({ size: 64, extension: "png" });
+  if (!url) return null;
+  try {
+    const img = await loadImage(url);
+    liveIconCache.set(key, img);
+    return img;
+  } catch (err) {
+    console.warn(`[live] could not load role icon for "${role.name}": ${err.message}`);
+    liveIconCache.set(key, null);
+    return null;
+  }
+}
+
+// Builds the input shape that renderLiveActivity expects. Resolves role icons
+// in parallel before returning. Called by the panel's /live/<id>.jpg route.
+async function buildLiveActivitySnapshot(guild) {
+  const rows = collectRows(guild);
+
+  const sections = [];
+  const memberIdUnion = new Set();
+
+  for (const meta of LIVE_SECTIONS) {
+    const sectionRows = rows[meta.key] || [];
+    if (sectionRows.length === 0) continue;
+
+    // Pre-resolve icons in parallel for this section.
+    const withIcons = await Promise.all(sectionRows.map(async (r) => {
+      const role = r.roleId ? guild.roles.cache.get(r.roleId) : null;
+      const icon = await loadRoleIcon(role);
+      return { ...r, icon };
+    }));
+
+    const sectionMemberIds = new Set();
+    for (const r of withIcons) {
+      for (const id of r.memberIds || []) {
+        sectionMemberIds.add(id);
+        memberIdUnion.add(id);
+      }
+    }
+
+    sections.push({
+      key: meta.key,
+      title: meta.title,
+      emoji: meta.emoji,
+      memberCount: sectionMemberIds.size,
+      rows: withIcons,
+    });
+  }
+
+  return {
+    guildName: guild.name,
+    totalActive: memberIdUnion.size,
+    sections,
+  };
+}
+
+module.exports = {
+  updateStatsEmbed,
+  migrateStaleTimerPrefixes,
+  collectRows,
+  buildLiveActivitySnapshot,
+};
