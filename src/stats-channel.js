@@ -4,7 +4,7 @@ const { sendMonitoring } = require("./monitoring");
 const { roleMap, voiceChannelRoles, statsEmbeds, statsImageEmbeds, saveData } = require("./state");
 const tracker = require("./tracker");
 const { LIVE_SECTIONS } = require("./stats-image");
-const { buildLiveActivityEmbed, buildStatsImageEmbed } = require("./stats");
+const { liveImageUrl, statsImageUrl } = require("./stats");
 
 const STATS_CHANNEL_ID = process.env.STATS_CHANNEL_ID || config.statsChannelId || "";
 
@@ -71,6 +71,14 @@ async function fetchOrCreateMessage(channel, cache, guildId) {
   return null;
 }
 
+// 10.4.1: deliver the live activity image as a bare URL (Discord auto-unfurls)
+// rather than an EmbedBuilder with setImage. Embed-wrapped images cap at ~520px
+// display width on desktop; the bare-URL preview is wider. The image already
+// carries title + subtitle internally so the embed wrapper added no info.
+//
+// edit({ content: url, embeds: [] }) clears the 10.4.0 embed off the existing
+// persisted message on the first tick after deploy, then sets the URL as
+// content so Discord re-fetches and unfurls.
 async function updateStatsEmbed(client) {
   if (!STATS_CHANNEL_ID) return;
 
@@ -84,8 +92,8 @@ async function updateStatsEmbed(client) {
     }
     if (!channel || !channel.isTextBased() || channel.guild?.id !== guild.id) continue;
 
-    const embed = buildLiveActivityEmbed(guild);
-    if (!embed) {
+    const currentUrl = liveImageUrl(guild);
+    if (!currentUrl) {
       // No panel URL available — log once per process and skip.
       if (!updateStatsEmbed._warned) {
         console.warn("[stats-channel] no panel URL — live activity image disabled");
@@ -94,23 +102,21 @@ async function updateStatsEmbed(client) {
       continue;
     }
     // Cache-bust URL changes every 15 s; skip edit within the same bucket.
-    const currentUrl = embed.data.image?.url;
     if (lastLiveUrl.get(guild.id) === currentUrl && statsEmbeds[guild.id]) continue;
 
     try {
       const existing = await fetchOrCreateMessage(channel, statsEmbeds, guild.id);
       if (existing) {
-        // content: "" clears the old text body from the pre-10.4 format.
-        await existing.edit({ content: "", embeds: [embed] });
+        await existing.edit({ content: currentUrl, embeds: [] });
       } else {
-        const sent = await channel.send({ embeds: [embed], allowedMentions: { parse: [] } });
+        const sent = await channel.send({ content: currentUrl, allowedMentions: { parse: [] } });
         statsEmbeds[guild.id] = sent.id;
         saveData();
       }
       lastLiveUrl.set(guild.id, currentUrl);
     } catch (err) {
-      console.error(`[stats-channel] failed to update live embed in ${guild.name}: ${err.message}`);
-      await sendMonitoring(`❌ live embed update failed in **${guild.name}**: ${err.message}`);
+      console.error(`[stats-channel] failed to update live message in ${guild.name}: ${err.message}`);
+      await sendMonitoring(`❌ live message update failed in **${guild.name}**: ${err.message}`);
     }
   }
 }
@@ -128,30 +134,29 @@ async function updateStatsImageEmbed(client) {
     }
     if (!channel || !channel.isTextBased() || channel.guild?.id !== guild.id) continue;
 
-    const embed = buildStatsImageEmbed(guild, { lookbackLabel: "30d" });
-    if (!embed) {
+    const currentUrl = statsImageUrl(guild);
+    if (!currentUrl) {
       if (!updateStatsImageEmbed._warned) {
         console.warn("[stats-channel] no panel URL — !stats auto-update disabled");
         updateStatsImageEmbed._warned = true;
       }
       continue;
     }
-    const currentUrl = embed.data.image?.url;
     if (lastStatsUrl.get(guild.id) === currentUrl && statsImageEmbeds[guild.id]) continue;
 
     try {
       const existing = await fetchOrCreateMessage(channel, statsImageEmbeds, guild.id);
       if (existing) {
-        await existing.edit({ content: "", embeds: [embed] });
+        await existing.edit({ content: currentUrl, embeds: [] });
       } else {
-        const sent = await channel.send({ embeds: [embed], allowedMentions: { parse: [] } });
+        const sent = await channel.send({ content: currentUrl, allowedMentions: { parse: [] } });
         statsImageEmbeds[guild.id] = sent.id;
         saveData();
       }
       lastStatsUrl.set(guild.id, currentUrl);
     } catch (err) {
-      console.error(`[stats-channel] failed to update !stats embed in ${guild.name}: ${err.message}`);
-      await sendMonitoring(`❌ !stats embed update failed in **${guild.name}**: ${err.message}`);
+      console.error(`[stats-channel] failed to update !stats message in ${guild.name}: ${err.message}`);
+      await sendMonitoring(`❌ !stats message update failed in **${guild.name}**: ${err.message}`);
     }
   }
 }

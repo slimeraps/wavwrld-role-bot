@@ -1,4 +1,4 @@
-# WAV Bot — 10.4.0 (live activity image + !stats auto-update in stats channel)
+# WAV Bot — 10.4.1 (bare-URL delivery for bigger stats images)
 
 10.0 adds an owner-only Role Doctor plus activity aliases so mismatched
 presence names can resolve to the right premade role instead of creating
@@ -12,6 +12,34 @@ risked stalling and every restart doubled the rename load. The live
 activity surface now lives in a single auto-updating embed in a dedicated
 stats channel. Roles stay named cleanly (`Playing Rust`), and the embed
 shows time per activity, member count, and who is in it.
+
+## 10.4.1
+
+Drops the `EmbedBuilder` wrapper around the live activity and `!stats`
+JPEGs. Both messages are now sent as bare URLs in the message content;
+Discord auto-unfurls them as image previews, which are roughly 30–40 %
+wider on desktop than the embed's `setImage` display cap (~520 px).
+The image already carries its own title bar and ACTIVE badge, so the
+embed's title / description / footer were duplicating information the
+JPEG already showed.
+
+- `src/stats.js`: `runUsersView` (the `!stats` command) now posts
+  `{ content: imageUrl }`. `buildStatsImageEmbed` and
+  `buildLiveActivityEmbed` are deleted — they were the embed wrappers.
+  `statsImageUrl` is exported alongside the existing `liveImageUrl`
+  for the stats-channel auto-updaters.
+- `src/stats-channel.js`: both `updateStatsEmbed` and
+  `updateStatsImageEmbed` now resolve the URL directly via
+  `liveImageUrl(guild)` / `statsImageUrl(guild)` and post / edit
+  `{ content: url, embeds: [] }`. The `embeds: []` on edit removes
+  the 10.4.0 embed from the existing persisted message on the first
+  tick after deploy.
+- Fallback path (text embed in `src/stats.js`) unchanged — still used
+  when the panel URL can't be resolved.
+- No state migration required. The persisted message IDs
+  (`statsEmbeds` / `statsImageEmbeds` in `roles.json`) still point at
+  the same Discord messages; the first edit-after-deploy rewrites
+  content + clears the embed in one Discord REST call.
 
 ## 10.4.0
 

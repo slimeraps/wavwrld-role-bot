@@ -182,33 +182,6 @@ function buildUserMembers(guild, period) {
     });
 }
 
-// Shared !stats leaderboard embed builder. Used by the !stats command and by
-// the stats-channel auto-updater so the two surfaces stay visually identical.
-function buildStatsImageEmbed(guild, { title, lookbackLabel } = {}) {
-  const imageUrl = statsImageUrl(guild);
-  if (!imageUrl) return null;
-  return new EmbedBuilder()
-    .setColor(0xb084f0)
-    .setTitle(`🏆 ${title || "Top Members - Last 30 Days"}`)
-    .setDescription(`**${guild.name}** • ${lookbackLabel || "30d"} leaderboard, ranked by tracked voice activity.`)
-    .setImage(imageUrl)
-    .setFooter({ text: `${lookbackLabel || "30d"} stats • image refreshes once per minute` })
-    .setTimestamp(new Date());
-}
-
-// Shared live-activity embed builder. Used by the stats-channel auto-updater.
-// No title or description — the image carries the title. Pink accent color
-// matches the image's pink-left bar.
-function buildLiveActivityEmbed(guild) {
-  const imageUrl = liveImageUrl(guild);
-  if (!imageUrl) return null;
-  return new EmbedBuilder()
-    .setColor(0xffa6c9)
-    .setImage(imageUrl)
-    .setFooter({ text: "Updates every 15 seconds" })
-    .setTimestamp(new Date());
-}
-
 async function runUsersView(ctx, guild, { period, title, lookbackLabel }) {
   const members = buildUserMembers(guild, period);
   if (members.length === 0) {
@@ -217,16 +190,20 @@ async function runUsersView(ctx, guild, { period, title, lookbackLabel }) {
 
   const totals = buildStatsTotals(guild, members);
 
-  // Primary path: send a Discord embed that POINTS AT the panel-hosted
-  // stats PNG. Discord's image proxy fetches the URL from us; the bot
-  // never speaks multipart. See the comment above panelBaseUrl() for why.
-  const embed = buildStatsImageEmbed(guild, { title, lookbackLabel });
-  if (embed) {
+  // Primary path: send the panel-hosted stats JPEG URL as bare message
+  // content. Discord's image proxy fetches it and auto-unfurls it as an
+  // image preview — wider than an embed's setImage cap, since the embed
+  // wrapper otherwise limits display width to ~520px on desktop. 10.4.1
+  // dropped the embed wrapper for that reason; the image already carries
+  // its title/badge so the embed's title + description + footer was
+  // mostly redundant.
+  const imageUrl = statsImageUrl(guild);
+  if (imageUrl) {
     try {
-      return await ctx.reply({ embeds: [embed], allowedMentions: { parse: [] } });
+      return await ctx.reply({ content: imageUrl, allowedMentions: { parse: [] } });
     } catch (err) {
-      console.warn(`[stats] image-embed reply failed (${err.message}); falling back to text embed`);
-      sendMonitoring(`⚠️ /stats image-embed fallback in **${guild.name}**: ${err.message}`).catch(() => {});
+      console.warn(`[stats] image-url reply failed (${err.message}); falling back to text embed`);
+      sendMonitoring(`⚠️ /stats image-url fallback in **${guild.name}**: ${err.message}`).catch(() => {});
       // fall through to text-embed path
     }
   } else {
@@ -344,8 +321,7 @@ module.exports = {
   buildUserMembers,
   buildStatsTotals,
   roleForGameKey,
-  // exported for the stats-channel auto-updaters
-  buildStatsImageEmbed,
-  buildLiveActivityEmbed,
+  // exported for the stats-channel auto-updaters (10.4.1: bare URL, not embed)
   liveImageUrl,
+  statsImageUrl,
 };
