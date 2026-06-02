@@ -1,8 +1,34 @@
 const http = require("http");
 const crypto = require("crypto");
-const { collectRows } = require("./stats-channel");
+const { collectRows, buildLiveActivitySnapshot } = require("./stats-channel");
 const { buildUserMembers, buildStatsTotals, roleForGameKey } = require("./stats");
-const { renderUsersDefault } = require("./stats-image");
+const { renderUsersDefault, renderLiveActivity } = require("./stats-image");
+
+// ── live activity image cache ──────────────────────────────────────────
+// The bot edits the live activity embed every 15 s with a fresh ?t bucket,
+// which forces Discord's image proxy to refetch. We cache the rendered JPEG
+// for 10 s — guarantees at most one render per 15 s tick, and absorbs any
+// stampede from the proxy refetching twice in quick succession.
+const LIVE_CACHE_TTL_MS = 10_000;
+const liveImageCache = new Map(); // guildId -> { buffer, mime, generatedAt }
+
+async function renderLiveImage(client, guildId) {
+  const cached = liveImageCache.get(guildId);
+  if (cached && Date.now() - cached.generatedAt < LIVE_CACHE_TTL_MS) {
+    return cached;
+  }
+  const guild = client.guilds.cache.get(guildId);
+  if (!guild) {
+    const e = new Error("guild_not_found");
+    e.httpCode = 404;
+    throw e;
+  }
+  const snapshot = await buildLiveActivitySnapshot(guild);
+  const buffer = await renderLiveActivity(snapshot);
+  const entry = { buffer, mime: "image/jpeg", generatedAt: Date.now() };
+  liveImageCache.set(guildId, entry);
+  return entry;
+}
 
 // ── stats PNG cache ────────────────────────────────────────────────────
 // 10.2.0 pivots the !stats image away from bot-side multipart uploads
@@ -364,6 +390,29 @@ function startPanel(client) {
         res.writeHead(code, { "Content-Type": "text/plain" });
         res.end(err.message);
         if (code >= 500) console.error(`[panel] /stats/${guildId}.jpg failed:`, err);
+      });
+      return;
+    }
+
+    // Public, un-authed live activity image. Same rationale as /stats: the
+    // Discord image proxy fetches this URL when rendering the live activity
+    // embed, and we can't make it send our PANEL_TOKEN. The data is visible
+    // inside the Discord server anyway. Validate snowflake shape first.
+    const liveMatch = url.pathname.match(/^\/live\/(\d{17,20})\.jpg$/);
+    if (liveMatch) {
+      const guildId = liveMatch[1];
+      renderLiveImage(client, guildId).then((entry) => {
+        res.writeHead(200, {
+          "Content-Type": entry.mime,
+          "Cache-Control": "public, max-age=15",
+          "Content-Length": entry.buffer.length,
+        });
+        res.end(entry.buffer);
+      }).catch((err) => {
+        const code = err.httpCode || 500;
+        res.writeHead(code, { "Content-Type": "text/plain" });
+        res.end(err.message);
+        if (code >= 500) console.error(`[panel] /live/${guildId}.jpg failed:`, err);
       });
       return;
     }
