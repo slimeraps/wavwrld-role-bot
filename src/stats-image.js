@@ -19,7 +19,7 @@ const PALETTE = {
   muted: "#949ba4",
   dim: "#80848e",
   accent: "#5865f2",
-  green: "#23a55a",
+  legacyGreen: "#23a55a",
   yellow: "#fee75c",
   red: "#f23f42",
   voice: "#43a25a",
@@ -530,7 +530,7 @@ function renderVoice30d({ guildName, totals, members }) {
   fillBackground(ctx, WIDTH, height);
 
   let y = PADDING;
-  drawHeader(ctx, PADDING, y, WIDTH - PADDING * 2, "Top Voice Members — Last 30 Days", guildName, PALETTE.green);
+  drawHeader(ctx, PADDING, y, WIDTH - PADDING * 2, "Top Voice Members — Last 30 Days", guildName, PALETTE.legacyGreen);
   y += headerH + GAP;
 
   const sumW = WIDTH - PADDING * 2;
@@ -541,7 +541,7 @@ function renderVoice30d({ guildName, totals, members }) {
     "30d Total VC",
     fmtTime(totals.month),
     `${totals.memberCount} members tracked`,
-    PALETTE.green,
+    PALETTE.legacyGreen,
   );
   drawTriStat(
     ctx, PADDING + leftW + GAP, y, rightW, summaryH,
