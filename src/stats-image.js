@@ -357,6 +357,26 @@ function drawProgressRow(ctx, x, y, w, h, opts) {
   ctx.restore();
 }
 
+// Section header used by renderLiveActivity. Draws a single line at the top of
+// each section panel: SECTION TITLE (left) · subtitle (right). All coordinates
+// are already scaled by the caller.
+function drawSectionHeader(ctx, x, y, w, { title, subtitle, accent }) {
+  const padX = 18 * SCALE;
+  drawText(ctx, title.toUpperCase(), x + padX, y,
+    { size: 10 * SCALE, weight: "bold", color: accent || PALETTE.usersMuted });
+  if (subtitle) {
+    drawText(ctx, subtitle, x + w - padX, y,
+      { size: 10 * SCALE, color: PALETTE.usersDim, align: "right" });
+  }
+  // Divider line beneath the header — runs full panel width.
+  ctx.strokeStyle = PALETTE.usersBorder;
+  ctx.lineWidth = 1 * SCALE;
+  ctx.beginPath();
+  ctx.moveTo(x, y + 10 * SCALE);
+  ctx.lineTo(x + w, y + 10 * SCALE);
+  ctx.stroke();
+}
+
 async function renderUsersDefault({ guildName, title, totals, members, roleByGameKey }) {
   const memberRows = members.slice(0, 10);
   const podiumRows = memberRows.slice(0, 3);
