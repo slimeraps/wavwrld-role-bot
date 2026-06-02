@@ -539,7 +539,7 @@ async function renderUsersDefault({ guildName, title, totals, members, roleByGam
 // everything else uses the standard pink/blue language.
 const LIVE_SECTIONS = [
   { key: "playing",   title: "Playing",   emoji: "🎮" },
-  { key: "voice",     title: "Voice",     emoji: "🎤", accent: "green" },
+  { key: "voice",     title: "Voice",     emoji: "🎤" },
   { key: "listening", title: "Listening", emoji: "🎵" },
   { key: "watching",  title: "Watching",  emoji: "📺" },
   { key: "other",     title: "Other",     emoji: "🟣" },
