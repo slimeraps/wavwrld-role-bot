@@ -48,7 +48,7 @@ function collectRows(guild) {
       .sort((a, b) => a.localeCompare(b));
 
     const timeStr = minutes > 0 ? formatTimerMinutes(minutes) : "—";
-    rows[section].push({ display, minutes, timeStr, count: humans.size, memberNames });
+    rows[section].push({ display, minutes, timeStr, count: humans.size, memberNames, memberIds, roleId });
   }
 
   for (const section of Object.keys(rows)) {
