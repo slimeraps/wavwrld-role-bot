@@ -51,6 +51,18 @@ function statsImageUrl(guild) {
   return `${base}/stats/${guild.id}.jpg?t=${bucket}`;
 }
 
+// Live activity image URL — same panel-served pattern as statsImageUrl but on a
+// 15-second cache bucket so Discord's image proxy refetches each tick. The
+// updateStatsEmbed auto-updater edits the embed once per 15 s; the URL change
+// is what makes Discord re-fetch.
+function liveImageUrl(guild) {
+  if (!process.env.PANEL_TOKEN) return null;
+  const base = panelBaseUrl();
+  if (!base) return null;
+  const bucket = Math.floor(Date.now() / 15_000);
+  return `${base}/live/${guild.id}.jpg?t=${bucket}`;
+}
+
 const sumLeaderboard = (guildId, type, period) =>
   tracker.leaderboard(guildId, type, period).reduce((s, e) => s + e.minutes, 0);
 
@@ -170,6 +182,33 @@ function buildUserMembers(guild, period) {
     });
 }
 
+// Shared !stats leaderboard embed builder. Used by the !stats command and by
+// the stats-channel auto-updater so the two surfaces stay visually identical.
+function buildStatsImageEmbed(guild, { title, lookbackLabel } = {}) {
+  const imageUrl = statsImageUrl(guild);
+  if (!imageUrl) return null;
+  return new EmbedBuilder()
+    .setColor(0xb084f0)
+    .setTitle(`🏆 ${title || "Top Members - Last 30 Days"}`)
+    .setDescription(`**${guild.name}** • ${lookbackLabel || "30d"} leaderboard, ranked by tracked voice activity.`)
+    .setImage(imageUrl)
+    .setFooter({ text: `${lookbackLabel || "30d"} stats • image refreshes once per minute` })
+    .setTimestamp(new Date());
+}
+
+// Shared live-activity embed builder. Used by the stats-channel auto-updater.
+// No title or description — the image carries the title. Pink accent color
+// matches the image's pink-left bar.
+function buildLiveActivityEmbed(guild) {
+  const imageUrl = liveImageUrl(guild);
+  if (!imageUrl) return null;
+  return new EmbedBuilder()
+    .setColor(0xffa6c9)
+    .setImage(imageUrl)
+    .setFooter({ text: "Updates every 15 seconds" })
+    .setTimestamp(new Date());
+}
+
 async function runUsersView(ctx, guild, { period, title, lookbackLabel }) {
   const members = buildUserMembers(guild, period);
   if (members.length === 0) {
@@ -181,15 +220,8 @@ async function runUsersView(ctx, guild, { period, title, lookbackLabel }) {
   // Primary path: send a Discord embed that POINTS AT the panel-hosted
   // stats PNG. Discord's image proxy fetches the URL from us; the bot
   // never speaks multipart. See the comment above panelBaseUrl() for why.
-  const imageUrl = statsImageUrl(guild);
-  if (imageUrl) {
-    const embed = new EmbedBuilder()
-      .setColor(0xb084f0)
-      .setTitle(`🏆 ${title || "Top Members - Last 30 Days"}`)
-      .setDescription(`**${guild.name}** • ${lookbackLabel || "30d"} leaderboard, ranked by tracked voice activity.`)
-      .setImage(imageUrl)
-      .setFooter({ text: `${lookbackLabel || "30d"} stats • image refreshes once per minute` })
-      .setTimestamp(new Date());
+  const embed = buildStatsImageEmbed(guild, { title, lookbackLabel });
+  if (embed) {
     try {
       return await ctx.reply({ embeds: [embed], allowedMentions: { parse: [] } });
     } catch (err) {
@@ -203,12 +235,12 @@ async function runUsersView(ctx, guild, { period, title, lookbackLabel }) {
 
   // Fallback path: text-only data embed. Used when the panel URL can't be
   // resolved or the image-embed reply itself failed. No multipart upload.
-  const embed = buildStatsEmbed(guild, members, totals, { title, lookbackLabel });
+  const textEmbed = buildStatsEmbed(guild, members, totals, { title, lookbackLabel });
   try {
-    return await ctx.reply({ embeds: [embed], allowedMentions: { parse: [] } });
+    return await ctx.reply({ embeds: [textEmbed], allowedMentions: { parse: [] } });
   } catch {
-    try { return await ctx.followUp({ embeds: [embed], allowedMentions: { parse: [] } }); } catch {}
-    if (ctx.channel) return ctx.channel.send({ embeds: [embed], allowedMentions: { parse: [] } });
+    try { return await ctx.followUp({ embeds: [textEmbed], allowedMentions: { parse: [] } }); } catch {}
+    if (ctx.channel) return ctx.channel.send({ embeds: [textEmbed], allowedMentions: { parse: [] } });
   }
 }
 
@@ -312,4 +344,8 @@ module.exports = {
   buildUserMembers,
   buildStatsTotals,
   roleForGameKey,
+  // exported for the stats-channel auto-updaters
+  buildStatsImageEmbed,
+  buildLiveActivityEmbed,
+  liveImageUrl,
 };
