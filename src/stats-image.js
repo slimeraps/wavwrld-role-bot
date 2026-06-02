@@ -354,113 +354,156 @@ function drawProgressRow(ctx, x, y, w, h, opts) {
   ctx.restore();
 }
 
-// Top Members list with role icons next to each top game.
-// `title` lets us reuse the same layout for "Last 30 Days" and "All Time" views.
-async function renderUsersDefault({ guildName, title, lookbackLabel, totals, members, guild, roleByGameKey }) {
+async function renderUsersDefault({ guildName, title, totals, members, roleByGameKey }) {
   const memberRows = members.slice(0, 10);
+  const podiumRows = memberRows.slice(0, 3);
+  const listRows = memberRows.slice(3);
 
-  // Resolve + load role icons in parallel before we start drawing.
+  // Resolve + load all role icons in parallel before drawing.
   const resolved = await Promise.all(memberRows.map(async (r) => {
-    if (!r.topGame) return { row: r, icon: null, role: null };
+    if (!r.topGame) return { row: r, icon: null };
     const role = roleByGameKey?.(r.topGame.key) || null;
     const icon = await loadRoleIconCached(role);
-    return { row: r, icon, role };
+    return { row: r, icon };
   }));
 
-  const headerH = 60;
-  const summaryH = 100;
-  const listHeaderH = 44;
-  const rowH = 32;
-  const listH = listHeaderH + rowH * memberRows.length + 12;
-  const height = PADDING * 2 + headerH + GAP + summaryH + GAP + listH;
+  // Layout (all values 1x-logical; multiply by SCALE before drawing).
+  const W = 720 * SCALE;
+  const PAD = 20 * SCALE;
+  const HEADER_H = 72 * SCALE;
+  const SEC_GAP = 14 * SCALE;
+  const POD_GAP = 12 * SCALE;
+  const POD_SIDE_H = 232 * SCALE;
+  const POD_CENTER_H = 256 * SCALE;
+  const LIST_PAD_TOP = 12 * SCALE;
+  const LIST_HEADER_H = 30 * SCALE;
+  const ROW_H = 36 * SCALE;
 
-  const canvas = createCanvas(WIDTH, height);
+  const listH = listRows.length > 0
+    ? LIST_PAD_TOP + LIST_HEADER_H + ROW_H * listRows.length + LIST_PAD_TOP
+    : 0;
+  const podH = podiumRows.length > 0 ? POD_CENTER_H : 0;
+  const height = PAD
+    + HEADER_H
+    + (podH > 0 ? SEC_GAP + podH : 0)
+    + (listH > 0 ? SEC_GAP + listH : 0)
+    + PAD;
+
+  const canvas = createCanvas(W, height);
   const ctx = canvas.getContext("2d");
-  fillBackground(ctx, WIDTH, height);
+  drawCanvasBackground(ctx, W, height);
 
-  let y = PADDING;
-  drawHeader(ctx, PADDING, y, WIDTH - PADDING * 2, title || "Top Members — Last 30 Days", guildName, PALETTE.accent);
-  y += headerH + GAP;
+  // ── Header ────────────────────────────────────────────────────────────
+  let y = PAD;
+  drawPanel(ctx, PAD, y, W - PAD * 2, HEADER_H, PALETTE.usersPanel);
+  // Pink accent bar on the left edge of the header panel.
+  ctx.fillStyle = PALETTE.pink;
+  roundRect(ctx, PAD, y, 4 * SCALE, HEADER_H, 2 * SCALE);
+  ctx.fill();
 
-  const sumW = WIDTH - PADDING * 2;
-  const leftW = Math.floor(sumW * 0.36);
-  const rightW = sumW - leftW - GAP;
-  drawBigStat(
-    ctx, PADDING, y, leftW, summaryH,
-    `Server Lookback (${lookbackLabel || "30d"})`,
-    fmtTime(totals.voiceLookback + totals.gameLookback),
-    `${totals.activeMembers} active members`,
-    PALETTE.accent,
-  );
-  drawTriStat(
-    ctx, PADDING + leftW + GAP, y, rightW, summaryH,
-    "Voice Activity",
-    [
-      { label: "1d", value: fmtTime(totals.voiceDay), color: PALETTE.voice },
-      { label: "7d", value: fmtTime(totals.voiceWeek), color: PALETTE.voice },
-      { label: "30d", value: fmtTime(totals.voiceMonth), color: PALETTE.voice },
-    ],
-  );
-  y += summaryH + GAP;
+  // Title + sub on the left.
+  drawText(ctx, title || "Top Members — Last 30 Days",
+    PAD + 24 * SCALE, y + 30 * SCALE,
+    { size: 19 * SCALE, weight: "bold", color: PALETTE.usersText });
+  drawText(ctx, guildName || "",
+    PAD + 24 * SCALE, y + 52 * SCALE,
+    { size: 12 * SCALE, color: PALETTE.usersMuted });
 
-  // List panel with role icons inline.
-  drawPanel(ctx, PADDING, y, sumW, listH);
-  drawText(ctx, "TOP MEMBERS", PADDING + 14, y + 26, { size: 11, weight: "bold", color: PALETTE.muted });
+  // ACTIVE badge on the right.
+  const activeRightX = W - PAD - 18 * SCALE;
+  const dividerX = activeRightX - 80 * SCALE; // small gutter for the divider
+  ctx.strokeStyle = PALETTE.usersBorder;
+  ctx.lineWidth = 1 * SCALE;
+  ctx.beginPath();
+  ctx.moveTo(dividerX, y + 18 * SCALE);
+  ctx.lineTo(dividerX, y + HEADER_H - 18 * SCALE);
+  ctx.stroke();
 
-  const listX = PADDING;
-  const rankColW = 28;
-  const valueColX = PADDING + sumW - 14; // right edge for the hours value
-  const valueColW = 90;
-  const subRightX = valueColX - valueColW - 16;
-  const nameX = listX + 14 + rankColW;
+  ctx.textAlign = "right";
+  ctx.textBaseline = "alphabetic";
+  ctx.font = `bold ${10 * SCALE}px UI Bold`;
+  ctx.fillStyle = PALETTE.usersMuted;
+  ctx.fillText("ACTIVE", activeRightX, y + 30 * SCALE);
+  ctx.font = `bold ${26 * SCALE}px UI Bold`;
+  ctx.fillStyle = PALETTE.pink;
+  ctx.fillText(String(totals?.activeMembers ?? 0), activeRightX, y + 58 * SCALE);
 
-  resolved.forEach(({ row, icon, role }, i) => {
-    const ry = y + listHeaderH + rowH * i + rowH / 2 + 4;
-    const rank = rankLabel(i);
-    drawText(ctx, rank.text, listX + 14, ry, { size: 14, weight: "bold", color: rank.color });
+  y += HEADER_H;
 
-    // Member name (left)
-    const nameMaxW = 220;
-    const nameText = truncate(ctx, row.displayName, nameMaxW, "bold 14px UI Bold");
-    drawText(ctx, nameText, nameX, ry, { size: 14, weight: "bold" });
+  // ── Podium ────────────────────────────────────────────────────────────
+  if (podiumRows.length > 0) {
+    y += SEC_GAP;
+    const podRow = y;
+    const innerW = W - PAD * 2;
+    const cardW = Math.floor((innerW - POD_GAP * 2) / 3);
 
-    // Sub line: [icon] Game name (Xh Ym) — right-aligned at subRightX
-    let subX = subRightX;
-    if (row.topGame) {
-      const label = `${row.topGame.key} (${fmtTime(row.topGame.minutes)})`;
-      // Measure width to right-align the whole [icon + label] block.
-      ctx.font = "12px UI";
-      const labelW = ctx.measureText(label).width;
-      const totalW = labelW + (icon ? ICON_SIZE + 6 : 0);
-      const startX = subX - totalW;
+    const xs = [PAD, PAD + cardW + POD_GAP, PAD + (cardW + POD_GAP) * 2];
+    // Card order on screen: silver(left), gold(center), bronze(right).
+    // memberRows indexes: [0]=gold #1, [1]=silver #2, [2]=bronze #3.
+    const slots = [
+      { row: podiumRows[1], icon: resolved[1]?.icon, rankLabel: "2ND", rankColor: PALETTE.silver, isPrimary: false, x: xs[0], h: POD_SIDE_H },
+      { row: podiumRows[0], icon: resolved[0]?.icon, rankLabel: "1ST", rankColor: PALETTE.gold,   isPrimary: true,  x: xs[1], h: POD_CENTER_H },
+      { row: podiumRows[2], icon: resolved[2]?.icon, rankLabel: "3RD", rankColor: PALETTE.bronze, isPrimary: false, x: xs[2], h: POD_SIDE_H },
+    ].filter((s) => s.row); // gracefully drop slots if <3 members
 
-      if (icon) {
-        // Round-clip the icon for a cleaner look.
-        ctx.save();
-        ctx.beginPath();
-        const iy = ry - ICON_SIZE / 2 - 5;
-        ctx.arc(startX + ICON_SIZE / 2, iy + ICON_SIZE / 2, ICON_SIZE / 2, 0, Math.PI * 2);
-        ctx.closePath();
-        ctx.clip();
-        ctx.drawImage(icon, startX, iy, ICON_SIZE, ICON_SIZE);
-        ctx.restore();
-      }
-      drawText(
-        ctx,
-        label,
-        startX + (icon ? ICON_SIZE + 6 : 0),
-        ry,
-        { size: 12, color: PALETTE.muted },
-      );
-    } else {
-      drawText(ctx, "no games", subX, ry, { size: 12, color: PALETTE.dim, align: "right" });
+    for (const slot of slots) {
+      const cardY = podRow + (POD_CENTER_H - slot.h); // bottom-align cards
+      const gameLabel = slot.row.topGame
+        ? `${slot.row.topGame.key} · ${fmtTime(slot.row.topGame.minutes)}`
+        : null;
+      drawPodCard(ctx, slot.x, cardY, cardW, slot.h, {
+        rankLabel: slot.rankLabel,
+        rankColor: slot.rankColor,
+        icon: slot.icon,
+        name: slot.row.displayName,
+        gameLabel,
+        hoursLabel: fmtTime(slot.row.voiceMinutes),
+        isPrimary: slot.isPrimary,
+      });
     }
+    y += POD_CENTER_H;
+  }
 
-    // Voice hours (right)
-    drawText(ctx, fmtTime(row.voiceMinutes), valueColX, ry, {
-      size: 14, weight: "bold", color: PALETTE.voice, align: "right",
+  // ── List 4..10 ────────────────────────────────────────────────────────
+  if (listRows.length > 0) {
+    y += SEC_GAP;
+    const innerW = W - PAD * 2;
+    drawPanel(ctx, PAD, y, innerW, listH, PALETTE.usersPanel);
+
+    // Section header label.
+    drawText(ctx, "TOP MEMBERS 4–10",
+      PAD + 18 * SCALE, y + LIST_PAD_TOP + 18 * SCALE,
+      { size: 10 * SCALE, weight: "bold", color: PALETTE.usersMuted });
+
+    // Divider beneath the header.
+    ctx.strokeStyle = PALETTE.usersBorder;
+    ctx.lineWidth = 1 * SCALE;
+    ctx.beginPath();
+    const divY = y + LIST_PAD_TOP + LIST_HEADER_H - 1 * SCALE;
+    ctx.moveTo(PAD, divY);
+    ctx.lineTo(PAD + innerW, divY);
+    ctx.stroke();
+
+    // Find leader of positions 4..N for bar scaling.
+    const topVoice = listRows.reduce((m, r) => Math.max(m, r.voiceMinutes), 0);
+
+    listRows.forEach((row, i) => {
+      const rowY = y + LIST_PAD_TOP + LIST_HEADER_H + ROW_H * i;
+      const icon = resolved[i + 3]?.icon || null;
+      const gameLabel = row.topGame
+        ? `${row.topGame.key} · ${fmtTime(row.topGame.minutes)}`
+        : null;
+      const barPct = topVoice > 0 ? row.voiceMinutes / topVoice : 0;
+      drawProgressRow(ctx, PAD, rowY, innerW, ROW_H, {
+        rank: i + 4,
+        icon,
+        name: row.displayName,
+        gameLabel,
+        hoursLabel: fmtTime(row.voiceMinutes),
+        barPct,
+      });
     });
-  });
+  }
 
   return canvas.toBuffer("image/jpeg");
 }
