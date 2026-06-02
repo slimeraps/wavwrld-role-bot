@@ -4,11 +4,12 @@ const { sendMonitoring } = require("./monitoring");
 const { roleMap, voiceChannelRoles, statsEmbeds, statsImageEmbeds, saveData } = require("./state");
 const tracker = require("./tracker");
 const { LIVE_SECTIONS } = require("./stats-image");
-const { buildLiveActivityEmbed } = require("./stats");
+const { buildLiveActivityEmbed, buildStatsImageEmbed } = require("./stats");
 
 const STATS_CHANNEL_ID = process.env.STATS_CHANNEL_ID || config.statsChannelId || "";
 
 let lastLiveUrl = new Map(); // guildId -> last URL we sent, skip edit when bucket unchanged
+let lastStatsUrl = new Map();   // guildId -> last !stats URL we sent
 
 function categorize(roleName) {
   const clean = stripTimerPrefix(roleName);
@@ -114,6 +115,47 @@ async function updateStatsEmbed(client) {
   }
 }
 
+async function updateStatsImageEmbed(client) {
+  if (!STATS_CHANNEL_ID) return;
+
+  for (const guild of client.guilds.cache.values()) {
+    let channel;
+    try {
+      channel = await client.channels.fetch(STATS_CHANNEL_ID);
+    } catch (err) {
+      console.error(`[stats-channel] cannot fetch channel ${STATS_CHANNEL_ID}: ${err.message}`);
+      return;
+    }
+    if (!channel || !channel.isTextBased() || channel.guild?.id !== guild.id) continue;
+
+    const embed = buildStatsImageEmbed(guild, { lookbackLabel: "30d" });
+    if (!embed) {
+      if (!updateStatsImageEmbed._warned) {
+        console.warn("[stats-channel] no panel URL — !stats auto-update disabled");
+        updateStatsImageEmbed._warned = true;
+      }
+      continue;
+    }
+    const currentUrl = embed.data.image?.url;
+    if (lastStatsUrl.get(guild.id) === currentUrl && statsImageEmbeds[guild.id]) continue;
+
+    try {
+      const existing = await fetchOrCreateMessage(channel, statsImageEmbeds, guild.id);
+      if (existing) {
+        await existing.edit({ content: "", embeds: [embed] });
+      } else {
+        const sent = await channel.send({ embeds: [embed], allowedMentions: { parse: [] } });
+        statsImageEmbeds[guild.id] = sent.id;
+        saveData();
+      }
+      lastStatsUrl.set(guild.id, currentUrl);
+    } catch (err) {
+      console.error(`[stats-channel] failed to update !stats embed in ${guild.name}: ${err.message}`);
+      await sendMonitoring(`❌ !stats embed update failed in **${guild.name}**: ${err.message}`);
+    }
+  }
+}
+
 // One-time migration: strip stale `[Xh Ym]` prefixes from premade roles, since
 // we no longer maintain them. Throttled via renameRoleThrottled — failures are
 // logged and skipped so the bot keeps running.
@@ -206,6 +248,7 @@ async function buildLiveActivitySnapshot(guild) {
 
 module.exports = {
   updateStatsEmbed,
+  updateStatsImageEmbed,
   migrateStaleTimerPrefixes,
   collectRows,
   buildLiveActivitySnapshot,
