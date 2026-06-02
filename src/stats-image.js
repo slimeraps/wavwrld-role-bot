@@ -322,9 +322,9 @@ function drawProgressRow(ctx, x, y, w, h, opts) {
   const hoursRightX = x + w - innerPad;
   const hoursLeftX = hoursRightX - hoursWidth;
 
-  // Hours (right-aligned, blue).
+  // Hours (right-aligned). Caller picks the color (blue by default, green for voice).
   ctx.textAlign = "right";
-  ctx.fillStyle = PALETTE.blue;
+  ctx.fillStyle = opts.timeColor || PALETTE.blue;
   ctx.fillText(hoursLabel, hoursRightX, cy);
 
   // Available horizontal range for name + game.
