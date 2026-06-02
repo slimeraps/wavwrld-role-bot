@@ -192,7 +192,9 @@ function drawCanvasBackground(ctx, w, h) {
 function drawPodCard(ctx, x, y, w, h, opts) {
   // Card body.
   const fill = opts.isPrimary ? PALETTE.usersPanelPrimary : PALETTE.usersPanel;
-  drawPanel(ctx, x, y, w, h, fill);
+  ctx.fillStyle = fill;
+  roundRect(ctx, x, y, w, h, RADIUS * SCALE);
+  ctx.fill();
   if (opts.isPrimary) {
     ctx.strokeStyle = PALETTE.pinkBorder;
     ctx.lineWidth = 1 * SCALE;
@@ -395,7 +397,9 @@ async function renderUsersDefault({ guildName, title, totals, members, roleByGam
 
   // ── Header ────────────────────────────────────────────────────────────
   let y = PAD;
-  drawPanel(ctx, PAD, y, W - PAD * 2, HEADER_H, PALETTE.usersPanel);
+  ctx.fillStyle = PALETTE.usersPanel;
+  roundRect(ctx, PAD, y, W - PAD * 2, HEADER_H, RADIUS * SCALE);
+  ctx.fill();
   // Pink accent bar on the left edge of the header panel.
   ctx.fillStyle = PALETTE.pink;
   roundRect(ctx, PAD, y, 4 * SCALE, HEADER_H, 2 * SCALE);
@@ -468,7 +472,9 @@ async function renderUsersDefault({ guildName, title, totals, members, roleByGam
   if (listRows.length > 0) {
     y += SEC_GAP;
     const innerW = W - PAD * 2;
-    drawPanel(ctx, PAD, y, innerW, listH, PALETTE.usersPanel);
+    ctx.fillStyle = PALETTE.usersPanel;
+    roundRect(ctx, PAD, y, innerW, listH, RADIUS * SCALE);
+    ctx.fill();
 
     // Section header label.
     drawText(ctx, "TOP MEMBERS 4–10",
