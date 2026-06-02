@@ -1,4 +1,4 @@
-# WAV Bot — 10.1.3 (stats output as JPEG)
+# WAV Bot — 10.1.4 (statstest debug isolation)
 
 10.0 adds an owner-only Role Doctor plus activity aliases so mismatched
 presence names can resolve to the right premade role instead of creating
@@ -12,6 +12,23 @@ risked stalling and every restart doubled the rename load. The live
 activity surface now lives in a single auto-updating embed in a dedicated
 stats channel. Roles stay named cleanly (`Playing Rust`), and the embed
 shows time per activity, member count, and who is in it.
+
+## 10.1.4
+
+- Adds owner-only `!statstest` debug command. Sends a 67-byte hardcoded
+  PNG via `channel.send`, with timing logs at every step, a 2 s heartbeat
+  so we can see in `fly logs` whether `undici` is genuinely hung vs slowly
+  progressing, and a 30 s timeout. Purpose: isolate whether this bot's
+  multipart upload pipeline is universally wedged on this host, or only
+  stalls inside `runUsersView` (per Phase 4.5 of systematic debugging —
+  3 fixes failed, stop patching, gather evidence). No behaviour change to
+  any production command.
+- Discovery while diagnosing: `!playing` is exported from `src/stats.js`
+  but **not registered** in `src/commands.js`, so it cannot be invoked.
+  The 10.1.3 note that "`!playing` uses the same renderer in PNG and
+  works" was based on a false premise — the command was never reachable.
+  Whether the upload pipeline works for any non-stats payload is still
+  unknown; `!statstest` is designed to answer it in one run.
 
 ## 10.1.3
 

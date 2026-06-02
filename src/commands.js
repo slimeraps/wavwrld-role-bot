@@ -3,7 +3,7 @@ const { config, persistConfig } = require("./config");
 const { sendMonitoring } = require("./monitoring");
 const { handleCleanupCmd, cleanupAndResync } = require("./cleanup");
 const m = require("./music");
-const { statsCmd } = require("./stats");
+const { statsCmd, statsTestCmd } = require("./stats");
 const { doctorCmd } = require("./doctor");
 const { unknownCmd } = require("./unknown");
 
@@ -218,6 +218,13 @@ const COMMANDS = [
     description: "Owner-only: toggle onlyUsePremadeRoles and resync",
     needsOwner: true,
     handler: premadeCmd,
+  },
+  {
+    name: "statstest",
+    description: "Owner-only: debug — send a 67-byte PNG to isolate the upload-hang issue",
+    needsOwner: true,
+    textOnly: true,
+    handler: statsTestCmd,
   },
 ];
 

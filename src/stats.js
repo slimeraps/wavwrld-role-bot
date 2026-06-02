@@ -271,7 +271,69 @@ async function playingCmd(ctx) {
   }
 }
 
+// ── debug: isolation test for the upload-hang issue ────────────────────
+// Bypasses render, role-icon CDN, interaction defer, big buffer — sends a
+// 67-byte hardcoded PNG. Tells us whether this bot's multipart channel.send
+// works AT ALL, independent of anything runUsersView does.
+//
+// 1x1 transparent PNG (67 bytes), built from the canonical byte sequence so
+// there's zero render-path / canvas / font involvement.
+const TINY_PNG = Buffer.from([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00,
+  0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01,
+  0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f,
+  0x15, 0xc4, 0x89, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x44, 0x41,
+  0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00, 0x05, 0x00,
+  0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49,
+  0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+]);
+
+async function statsTestCmd(ctx) {
+  if (!ctx.channel) return ctx.reply("statstest needs a channel context.");
+  const t0 = Date.now();
+  const ts = () => `t+${Date.now() - t0}ms`;
+  console.log(`[statstest] ${ts()}: handler entered, channel=${ctx.channel.id}`);
+
+  // Control: plain text send.
+  try {
+    const tA = Date.now();
+    await ctx.channel.send("⏱️ statstest: text send (control)…");
+    console.log(`[statstest] ${ts()}: text send OK (${Date.now() - tA}ms)`);
+  } catch (err) {
+    console.error(`[statstest] ${ts()}: text send FAILED:`, err);
+    return;
+  }
+
+  // The actual experiment: tiny PNG via channel.send.
+  const t1 = Date.now();
+  console.log(`[statstest] ${ts()}: about to channel.send tiny png (${TINY_PNG.length}B)`);
+  const heartbeat = setInterval(() => {
+    console.log(`[statstest] still waiting on file send at ${ts()}`);
+  }, 2000);
+
+  try {
+    await Promise.race([
+      ctx.channel.send({
+        files: [new AttachmentBuilder(TINY_PNG, { name: "tiny.png" })],
+        allowedMentions: { parse: [] },
+      }),
+      new Promise((_, rej) =>
+        setTimeout(() => rej(new Error("statstest-timeout after 30000ms")), 30_000),
+      ),
+    ]);
+    clearInterval(heartbeat);
+    const dt = Date.now() - t1;
+    console.log(`[statstest] ${ts()}: file send OK in ${dt}ms`);
+    try { await ctx.channel.send(`✅ tiny png OK in ${dt}ms`); } catch {}
+  } catch (err) {
+    clearInterval(heartbeat);
+    const dt = Date.now() - t1;
+    console.error(`[statstest] ${ts()}: file send FAILED after ${dt}ms:`, err);
+    try { await ctx.channel.send(`❌ tiny png FAILED after ${dt}ms: ${err.message}`); } catch {}
+  }
+}
+
 // Legacy export — kept so accidental imports don't crash.
 function logActivity() {}
 
-module.exports = { logActivity, statsCmd, playingCmd };
+module.exports = { logActivity, statsCmd, playingCmd, statsTestCmd };
