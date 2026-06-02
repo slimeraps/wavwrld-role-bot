@@ -391,7 +391,7 @@ async function renderUsersDefault({ guildName, title, totals, members, roleByGam
   }));
 
   // Layout (all values 1x-logical; multiply by SCALE before drawing).
-  const W = 720 * SCALE;
+  const W = 960 * SCALE;
   const PAD = 20 * SCALE;
   const HEADER_H = 72 * SCALE;
   const SEC_GAP = 14 * SCALE;
@@ -547,7 +547,7 @@ const LIVE_SECTIONS = [
 
 async function renderLiveActivity({ guildName, totalActive, sections }) {
   // Layout constants (1× logical pixels — multiplied by SCALE before drawing).
-  const W = 720 * SCALE;
+  const W = 960 * SCALE;
   const PAD = 20 * SCALE;
   const HEADER_H = 72 * SCALE;
   const SEC_GAP = 12 * SCALE;

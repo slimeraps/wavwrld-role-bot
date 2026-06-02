@@ -1,4 +1,4 @@
-# WAV Bot — 10.4.1 (bare-URL delivery for bigger stats images)
+# WAV Bot — 10.4.2 (wider stats image canvas, 720 → 960 logical px)
 
 10.0 adds an owner-only Role Doctor plus activity aliases so mismatched
 presence names can resolve to the right premade role instead of creating
@@ -12,6 +12,16 @@ risked stalling and every restart doubled the rename load. The live
 activity surface now lives in a single auto-updating embed in a dedicated
 stats channel. Roles stay named cleanly (`Playing Rust`), and the embed
 shows time per activity, member count, and who is in it.
+
+## 10.4.2
+
+Bumps the source canvas width for both `renderUsersDefault` (!stats
+leaderboard) and `renderLiveActivity` (live activity) from 720 → 960
+logical px (so 1920 px at SCALE=2). Combined with 10.4.1's bare-URL
+delivery, the auto-unfurled preview in Discord renders meaningfully
+wider — more room for member-name lists and game labels before
+truncation. No layout-constant changes; everything is proportional
+to `W` already.
 
 ## 10.4.1
 
