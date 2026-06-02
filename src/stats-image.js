@@ -40,6 +40,7 @@ const PALETTE = {
   pinkGhost: "rgba(255, 166, 201, 0.08)",
   pinkBorder: "rgba(255, 166, 201, 0.45)",
   blue: "#9ec5ff",
+  green: "#b8e3a1",
 };
 
 const PADDING = 20;
