@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Live Activity — redesign</title>
+<style>
+  :root {
+    --bg: linear-gradient(135deg, #7a4e62 0%, #4d5f7a 100%);
+    --panel: #1d1c25;
+    --panel-2: #181720;
+    --border: #2a2735;
+    --text: #ece6f0;
+    --muted: #a39cb0;
+    --dim: #6e6878;
+    --pink: #ffa6c9;
+    --pink-soft: rgba(255, 166, 201, 0.18);
+    --pink-ghost: rgba(255, 166, 201, 0.08);
+    --blue: #9ec5ff;
+    --blue-soft: rgba(158, 197, 255, 0.18);
+    --green: #b8e3a1;
+    --voice: #b8e3a1;
+  }
+  body {
+    margin: 0;
+    padding: 40px 20px;
+    background: #0a0a0a;
+    font-family: "DejaVu Sans", "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+    color: #999;
+    font-size: 12px;
+  }
+  .label {
+    max-width: 720px;
+    margin: 0 auto 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #666;
+  }
+  .canvas {
+    width: 720px;
+    margin: 0 auto;
+    background: var(--bg);
+    padding: 20px;
+    box-sizing: border-box;
+    color: var(--text);
+  }
+
+  /* Header — pink accent bar, title + sub on left, total-active on right. */
+  .header {
+    position: relative;
+    background: var(--panel);
+    border-radius: 10px;
+    padding: 14px 18px 14px 24px;
+    height: 72px;
+    box-sizing: border-box;
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .header::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 4px;
+    background: var(--pink);
+    border-radius: 2px 0 0 2px;
+  }
+  .header .titles { display: flex; flex-direction: column; min-width: 0; }
+  .header h1 {
+    margin: 0 0 4px;
+    font-size: 19px;
+    font-weight: bold;
+    color: var(--text);
+    letter-spacing: 0.2px;
+  }
+  .header .sub {
+    font-size: 12px;
+    color: var(--muted);
+    letter-spacing: 0.3px;
+  }
+  .header .active {
+    text-align: right;
+    flex-shrink: 0;
+    padding-left: 16px;
+    border-left: 1px solid var(--border);
+  }
+  .header .active .l {
+    text-transform: uppercase;
+    font-size: 10px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+  .header .active .v {
+    font-size: 26px;
+    font-weight: bold;
+    color: var(--pink);
+    line-height: 1;
+  }
+
+  /* Section panel — one per non-empty category. */
+  .section {
+    background: var(--panel);
+    border-radius: 10px;
+    padding: 12px 0;
+    margin-bottom: 12px;
+  }
+  .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    text-transform: uppercase;
+    font-size: 10px;
+    font-weight: bold;
+    color: var(--muted);
+    letter-spacing: 0.8px;
+    padding: 0 18px 8px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 6px;
+  }
+  .section-header .title { display: flex; gap: 8px; align-items: center; }
+  .section-header .emoji { font-size: 12px; }
+  .section-header .count {
+    color: var(--dim);
+    font-size: 10px;
+    letter-spacing: 0.5px;
+  }
+  /* Voice gets a green section title (the only deviation from pink/blue —
+     it's the established "live in voice" semantic and reads nicely in the
+     mix). */
+  .section.voice .section-header .title { color: var(--green); }
+
+  /* Row — matches !stats list-row layout but with member names taking
+     the place of the "top game" column. Pink ghost bar represents how
+     long this role has been active, relative to the longest active role
+     in the snapshot. */
+  .row {
+    position: relative;
+    display: grid;
+    grid-template-columns: 24px 1fr auto auto;
+    align-items: center;
+    gap: 10px;
+    height: 36px;
+    padding: 0 18px;
+    overflow: hidden;
+  }
+  .row .bar {
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    background: var(--pink-ghost);
+    z-index: 0;
+  }
+  .row > * { position: relative; z-index: 1; }
+  .row .icon {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #ffa6c9, #9ec5ff);
+  }
+  .row .name {
+    font-size: 14px;
+    font-weight: bold;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .row .members {
+    font-size: 12px;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 260px;
+    padding-right: 12px;
+  }
+  .row .time {
+    font-size: 14px;
+    font-weight: bold;
+    color: var(--blue);
+    min-width: 56px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .section.voice .row .time { color: var(--green); }
+
+  /* Footer — small, dim line under the canvas. */
+  .footer {
+    color: var(--muted);
+    font-size: 11px;
+    text-align: center;
+    padding: 8px 0 0;
+    letter-spacing: 0.3px;
+  }
+</style>
+</head>
+<body>
+<div class="label">Live Activity — proposed redesign (same pink/blue language as !stats)</div>
+
+<div class="canvas">
+  <div class="header">
+    <div class="titles">
+      <h1>Live Activity — wavwrld</h1>
+      <div class="sub">updates every 15 seconds</div>
+    </div>
+    <div class="active">
+      <div class="l">Active</div>
+      <div class="v">14</div>
+    </div>
+  </div>
+
+  <!-- Playing -->
+  <div class="section">
+    <div class="section-header">
+      <div class="title"><span class="emoji">🎮</span><span>Playing</span></div>
+      <div class="count">5 roles · 9 members</div>
+    </div>
+    <div class="row"><div class="bar" style="width: 100%"></div><div class="icon"></div><div class="name">Counter-Strike 2</div><div class="members">Helmsy, Anon42, mid_diff +1</div><div class="time">2h 14m</div></div>
+    <div class="row"><div class="bar" style="width: 68%"></div><div class="icon"></div><div class="name">Valorant</div><div class="members">shrimptank, ghosthand</div><div class="time">1h 32m</div></div>
+    <div class="row"><div class="bar" style="width: 41%"></div><div class="icon"></div><div class="name">Marvel Rivals</div><div class="members">Valkyrie_</div><div class="time">55m</div></div>
+    <div class="row"><div class="bar" style="width: 24%"></div><div class="icon"></div><div class="name">Hollow Knight</div><div class="members">Nyxe</div><div class="time">33m</div></div>
+    <div class="row"><div class="bar" style="width: 8%"></div><div class="icon"></div><div class="name">Helldivers 2</div><div class="members">blunt force</div><div class="time">11m</div></div>
+  </div>
+
+  <!-- Voice -->
+  <div class="section voice">
+    <div class="section-header">
+      <div class="title"><span class="emoji">🎤</span><span>Voice</span></div>
+      <div class="count">2 channels · 4 members</div>
+    </div>
+    <div class="row"><div class="bar" style="width: 56%"></div><div class="icon"></div><div class="name">General</div><div class="members">Helmsy, mid_diff, ghosthand</div><div class="time">1h 18m</div></div>
+    <div class="row"><div class="bar" style="width: 12%"></div><div class="icon"></div><div class="name">Music</div><div class="members">cordless</div><div class="time">16m</div></div>
+  </div>
+
+  <!-- Listening -->
+  <div class="section">
+    <div class="section-header">
+      <div class="title"><span class="emoji">🎵</span><span>Listening</span></div>
+      <div class="count">1 source · 1 member</div>
+    </div>
+    <div class="row"><div class="bar" style="width: 17%"></div><div class="icon"></div><div class="name">Spotify</div><div class="members">Whiskey</div><div class="time">24m</div></div>
+  </div>
+
+  <div class="footer">last update · 2 seconds ago</div>
+</div>
+</body>
+</html>
