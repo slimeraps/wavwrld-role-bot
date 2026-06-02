@@ -670,40 +670,67 @@ git commit -m "Rewrite renderUsersDefault with podium, progress bars, and 2x den
 
 ---
 
-## Task 7: Live smoke test in Discord (manual)
+## Task 7: Deploy to Fly and live smoke test
 
-End-to-end test of the bot path. Not a unit test — confirms the canvas → `/stats/<id>.jpg` → Discord embed pipeline still works with the new image.
+End-to-end test of the bot path via the production-deployment path. User has explicitly approved deploying to Fly for this smoke test. Confirms the canvas → `/stats/<id>.jpg` → Discord embed pipeline still works with the new image.
 
 **Files:** none — runtime validation only.
 
-- [ ] **Step 1: Start the bot locally**
+- [ ] **Step 1: Confirm the working tree is clean**
 
-Confirm `.env` is configured for a dev/test guild (NOT production). At minimum: `DISCORD_TOKEN`, `PANEL_TOKEN`, `PANEL_PUBLIC_URL` (or `FLY_APP_NAME` if running on Fly preview), and a guild with at least 3 tracked members so the podium has rows.
+Run: `git -C "G:\!CODESTUFF\DiscordBot\wavwrld-role-bot" status --short`
+Expected: empty output (every previous task's commit landed).
 
-Run: `node index.js` (or whatever the bot entrypoint is — check `package.json` `main` / `scripts.start`).
+If anything remains uncommitted, stop and report back — do **not** deploy a dirty tree.
 
-Expected: bot logs `Panel listening on :8080 (guild=...)` and connects to Discord.
+- [ ] **Step 2: Bump the release tag in the most recent commit message convention**
 
-- [ ] **Step 2: Trigger `!stats` in a test channel**
+The repo uses release-tagged commit messages (e.g. "Release 10.2.0: …"). The redesign is a visible user-facing change — it warrants a minor-version bump from the most recent release. Check the most recent release version:
 
-In the dev guild, type `!stats`. The bot should reply with an embed.
+Run: `git -C "G:\!CODESTUFF\DiscordBot\wavwrld-role-bot" log --oneline -5`
 
-Expected:
+Decide the next version. Most recent is `Release 10.2.0` per the session-start git log; this redesign is a feature change, so propose `Release 10.3.0`. If the repo has advanced past 10.2.0 since session start, increment from whatever is current.
 
-- Embed title "🏆 Top Members - Last 30 Days" (unchanged — `src/stats.js:188`).
-- Embed image area populated with the new design.
-- Within ~5 seconds, the image visible in the embed shows the pink/blue redesign (the first cold fetch may take a moment as role-icon CDN images are loaded and the JPEG is rendered).
-- Refreshing the image (e.g. by sending another `!stats` after waiting 60+ seconds) shows the latest data with no caching glitches.
+This task does NOT amend prior commits — they stay as individual feature commits. Instead, add an empty release-marker commit so the deploy is tied to a tagged version:
 
-- [ ] **Step 3: Verify the public stats URL directly**
+```
+git -C "G:\!CODESTUFF\DiscordBot\wavwrld-role-bot" commit --allow-empty -m "Release 10.3.0: stats-image redesign — pink/blue palette, podium, 2x density"
+```
 
-Open `<PANEL_PUBLIC_URL>/stats/<dev-guild-id>.jpg` in a browser (no `?key=` required — this route is intentionally public, see comment at `src/panel.js:351-355`).
+Replace `10.3.0` with the version you picked.
 
-Expected: the JPEG loads, matches what's in the embed.
+- [ ] **Step 3: Deploy to Fly**
 
-- [ ] **Step 4: Stop the bot, no commit needed**
+Run: `fly deploy --remote-only` from the repo root.
 
-This task produces no code change — only manual verification.
+Expected: build runs in the Fly builder, image is pushed, the `wavwrld-role-bot` app is updated, eventually prints `--> v<N> deployed successfully`. Takes 2–6 minutes typically.
+
+If `fly` is not on PATH on Windows, try the full path or fall back to `flyctl deploy --remote-only`. If neither works, stop and report — do not try to deploy by some other channel.
+
+- [ ] **Step 4: Verify the deploy is live**
+
+Run: `curl -s -o NUL -w "%{http_code}\n" https://wavwrld-role-bot.fly.dev/healthz`
+Expected: `200`
+
+- [ ] **Step 5: Eyeball the public stats URL directly**
+
+In a browser, open: `https://wavwrld-role-bot.fly.dev/stats/<production-guild-id>.jpg`
+
+(Get the guild ID from a recent log line, from `fly logs`, or from the user.)
+
+Expected: the JPEG loads, matches the mockup at `docs/stats-image-redesign/mockups/01-redesign.html`. Real role icons should appear inside the podium and list rows (Discord CDN fetches succeed). If the URL returns 404 with `guild_not_found`, the guild ID is wrong. If it returns 404 with `no_members`, the guild has zero tracked members — fall back to triggering `!stats` in Discord (next step) and let the user pick the channel.
+
+- [ ] **Step 6: Trigger `!stats` in Discord (user-driven)**
+
+Ask the user to run `!stats` in the wavwrld guild. The bot should reply with an embed showing the new image. Confirm with the user:
+
+- Embed title is "🏆 Top Members - Last 30 Days" (unchanged).
+- The image inside the embed shows the pink/blue redesign with the podium and progress rows.
+- The image is visibly sharper than before (2× density working).
+
+- [ ] **Step 7: No commit needed**
+
+This task produces no code change — only deployment and manual verification.
 
 ---
 
