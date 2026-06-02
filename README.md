@@ -1,4 +1,4 @@
-# WAV Bot — 10.2.0 (stats image via panel, bot no longer uploads)
+# WAV Bot — 10.4.0 (live activity image + !stats auto-update in stats channel)
 
 10.0 adds an owner-only Role Doctor plus activity aliases so mismatched
 presence names can resolve to the right premade role instead of creating
@@ -12,6 +12,78 @@ risked stalling and every restart doubled the rename load. The live
 activity surface now lives in a single auto-updating embed in a dedicated
 stats channel. Roles stay named cleanly (`Playing Rust`), and the embed
 shows time per activity, member count, and who is in it.
+
+## 10.4.0
+
+Two changes that turn the stats channel into a single cohesive surface.
+
+**Live activity is now a JPEG.** Replaces the text/code-fence sections that
+`updateStatsEmbed` posted since 9.7. New canvas renderer
+`renderLiveActivity` in `src/stats-image.js` reuses the redesigned pink/blue
+palette and panel language; sections (Playing / Voice / Listening /
+Watching / Other) become one panel each, rows match the leaderboard's
+progress-bar style. Voice sub-titles and time values render green. The
+JPEG is served by the existing HTTP panel at the new
+`GET /live/<guildId>.jpg` route (10 s in-process cache, un-authed for
+Discord's image proxy), and `updateStatsEmbed` now edits a Discord embed
+that points at it. Cadence unchanged at 15 s; URL cache-buster is per-15-s
+bucket so the proxy refetches each tick.
+
+**`!stats` is now always visible in the stats channel.** New auto-updater
+`updateStatsImageEmbed` posts the same `!stats` leaderboard image to
+`STATS_CHANNEL_ID` and edits it once a minute. The `!stats` /
+`/stats` command behaviour is unchanged — it still works in any channel.
+Both call sites (the command and the auto-updater) use a new shared
+`buildStatsImageEmbed` helper so the two surfaces stay identical.
+
+Other plumbing:
+
+- `src/state.js`: new `statsImageEmbeds` bucket persists the leaderboard
+  message ID so restarts edit in place instead of reposting.
+- `src/stats-channel.js`: `fetchOrCreateMessage` parameterized to take a
+  cache map; both updaters share it. The text-builder helpers
+  (`buildSectionLines`, `buildContent`, `hashRows`) and the
+  `MAX_MEMBER_NAMES_PER_ROW`/`MAX_MESSAGE_LEN` constants are removed.
+- `src/stats.js`: extracts `buildStatsImageEmbed` from `runUsersView` and
+  adds `buildLiveActivityEmbed` + `liveImageUrl`. The `!stats` command
+  refactored to call the helper.
+- `src/events.js`: seeds `updateStatsImageEmbed` on `ready`, after the
+  existing live activity seed. Discord guarantees consecutive-send order
+  so the channel ends up with live activity above and leaderboard below.
+- `bot.js`: adds a 60 s `setInterval` for `updateStatsImageEmbed`. The
+  existing 15 s interval for `updateStatsEmbed` is unchanged.
+- `scripts/render-live-preview.js`: dev-only preview that renders the
+  live activity image with synthetic data to `preview-live.jpg`. Mirrors
+  the existing `render-stats-preview.js` script.
+
+Manual smoke after deploy — see
+`docs/superpowers/specs/2026-06-01-live-activity-redesign-and-stats-auto-update-design.md`.
+
+## 10.3.0
+
+Visual redesign of the `!stats` JPEG. The data, the panel-serving
+delivery path, and the 30 s cache are all unchanged from 10.2.0; only
+the canvas drawing in `renderUsersDefault` changed.
+
+- New palette: muted pink-to-blue gradient background (`#7a4e62 →
+  #4d5f7a`), dark `#1d1c25` panels, pink (`#ffa6c9`) + light blue
+  (`#9ec5ff`) accents instead of the Discord-default `#5865f2` purple.
+- Top 3 promoted to a podium row with bottom-aligned cards (silver left,
+  gold center taller and warmer-toned, bronze right). Positions 4–10
+  render in a list panel below with pink ghost-fill progress bars
+  scaled by voice minutes.
+- Header redesigned: pink left accent bar, title + guild name on the
+  left, vertical divider + `ACTIVE <count>` badge on the right.
+- 2× density: canvas renders at `1440px` wide and is downscaled by
+  Discord's proxy, giving sharper text on HiDPI displays. All layout
+  constants and font sizes multiplied by `SCALE = 2`.
+- New private helpers in `src/stats-image.js`:
+  `drawCanvasBackground`, `drawPodCard`, `drawProgressRow`. The
+  legacy `drawHeader` / `drawBigStat` / `drawTriStat` helpers are
+  left in place since `renderVoice30d` / `renderPlaying` still use
+  them, but neither command is currently registered.
+- New `scripts/render-stats-preview.js` for offline iteration on the
+  layout.
 
 ## 10.2.0
 
