@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>!stats — current</title>
+<style>
+  body {
+    margin: 0;
+    padding: 40px 20px;
+    background: #0a0a0a;
+    font-family: "DejaVu Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+    color: #999;
+    font-size: 12px;
+  }
+  .label {
+    max-width: 720px;
+    margin: 0 auto 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #666;
+  }
+  .canvas {
+    width: 720px;
+    margin: 0 auto;
+    background: #1e1f22;
+    padding: 20px;
+    box-sizing: border-box;
+    border-radius: 0;
+    box-shadow: 0 0 0 1px #2a2a2a;
+    color: #dbdee1;
+  }
+  /* Header */
+  .header {
+    position: relative;
+    background: #2b2d31;
+    border-radius: 8px;
+    padding: 14px 18px;
+    height: 60px;
+    box-sizing: border-box;
+    margin-bottom: 12px;
+  }
+  .header::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 4px;
+    background: #5865f2;
+    border-radius: 2px 0 0 2px;
+  }
+  .header h1 {
+    margin: 0 0 4px;
+    font-size: 18px;
+    font-weight: bold;
+    color: #dbdee1;
+  }
+  .header .sub {
+    font-size: 12px;
+    color: #949ba4;
+  }
+  /* Summary row */
+  .summary-row {
+    display: grid;
+    grid-template-columns: 36% 1fr;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .panel {
+    background: #232428;
+    border-radius: 8px;
+    padding: 14px;
+    box-sizing: border-box;
+  }
+  .panel-label {
+    text-transform: uppercase;
+    font-size: 11px;
+    font-weight: bold;
+    color: #949ba4;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+  }
+  .big-value {
+    font-size: 28px;
+    font-weight: bold;
+    color: #5865f2;
+    margin-bottom: 4px;
+  }
+  .big-sub {
+    font-size: 12px;
+    color: #949ba4;
+  }
+  .tri {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-top: 8px;
+  }
+  .tri-label {
+    font-size: 12px;
+    font-weight: bold;
+    color: #dbdee1;
+    margin-bottom: 6px;
+  }
+  .tri-value {
+    font-size: 14px;
+    color: #43a25a;
+  }
+  /* List */
+  .list-header {
+    text-transform: uppercase;
+    font-size: 11px;
+    font-weight: bold;
+    color: #949ba4;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+  }
+  .row {
+    display: grid;
+    grid-template-columns: 24px 1fr auto auto;
+    align-items: center;
+    gap: 12px;
+    height: 32px;
+    padding: 0 4px;
+  }
+  .rank { font-size: 14px; font-weight: bold; }
+  .gold { color: #e5b25d; }
+  .silver { color: #b3b9c5; }
+  .bronze { color: #c47e58; }
+  .dim { color: #80848e; }
+  .name { font-size: 14px; font-weight: bold; color: #dbdee1; }
+  .game {
+    font-size: 12px;
+    color: #949ba4;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .role-icon {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #5865f2, #b084f0);
+    display: inline-block;
+    flex-shrink: 0;
+  }
+  .hours {
+    font-size: 14px;
+    font-weight: bold;
+    color: #43a25a;
+    min-width: 60px;
+    text-align: right;
+  }
+</style>
+</head>
+<body>
+<div class="label">Current — Discord-clone palette (#5865f2 accent, #43a25a voice)</div>
+<div class="canvas">
+  <div class="header">
+    <h1>Top Members — Last 30 Days</h1>
+    <div class="sub">wavwrld</div>
+  </div>
+
+  <div class="summary-row">
+    <div class="panel">
+      <div class="panel-label">Server Lookback (30d)</div>
+      <div class="big-value">412h</div>
+      <div class="big-sub">23 active members</div>
+    </div>
+    <div class="panel">
+      <div class="panel-label">Voice Activity</div>
+      <div class="tri">
+        <div><div class="tri-label">1d</div><div class="tri-value">8h 30m</div></div>
+        <div><div class="tri-label">7d</div><div class="tri-value">64h</div></div>
+        <div><div class="tri-label">30d</div><div class="tri-value">215h</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="list-header">Top Members</div>
+    <div class="row"><div class="rank gold">1</div><div class="name">Helmsy</div><div class="game"><span class="role-icon"></span>Counter-Strike 2 (38h)</div><div class="hours">47h</div></div>
+    <div class="row"><div class="rank silver">2</div><div class="name">Anon42</div><div class="game"><span class="role-icon"></span>Valorant (21h)</div><div class="hours">32h</div></div>
+    <div class="row"><div class="rank bronze">3</div><div class="name">Valkyrie_</div><div class="game"><span class="role-icon"></span>Marvel Rivals (15h)</div><div class="hours">28h</div></div>
+    <div class="row"><div class="rank dim">4</div><div class="name">shrimptank</div><div class="game"><span class="role-icon"></span>League of Legends (12h)</div><div class="hours">19h</div></div>
+    <div class="row"><div class="rank dim">5</div><div class="name">ghosthand</div><div class="game"><span class="role-icon"></span>Hollow Knight (9h)</div><div class="hours">14h</div></div>
+    <div class="row"><div class="rank dim">6</div><div class="name">mid_diff</div><div class="game"><span class="role-icon"></span>Apex Legends (7h)</div><div class="hours">11h</div></div>
+    <div class="row"><div class="rank dim">7</div><div class="name">Nyxe</div><div class="game"><span class="role-icon"></span>Minecraft (6h)</div><div class="hours">9h</div></div>
+    <div class="row"><div class="rank dim">8</div><div class="name">blunt force</div><div class="game"><span class="role-icon"></span>Helldivers 2 (5h)</div><div class="hours">7h</div></div>
+    <div class="row"><div class="rank dim">9</div><div class="name">cordless</div><div class="game"><span class="role-icon"></span>Rocket League (3h)</div><div class="hours">6h</div></div>
+    <div class="row"><div class="rank dim">10</div><div class="name">Whiskey</div><div class="game"><span class="role-icon"></span>Overwatch 2 (2h)</div><div class="hours">4h</div></div>
+  </div>
+</div>
+</body>
+</html>

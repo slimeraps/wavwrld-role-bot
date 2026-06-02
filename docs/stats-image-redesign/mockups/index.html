@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>!stats redesign — comparison</title>
+<style>
+  body {
+    margin: 0;
+    background: #0a0a0a;
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    color: #ccc;
+  }
+  header {
+    padding: 24px 32px;
+    border-bottom: 1px solid #222;
+  }
+  header h1 { margin: 0 0 4px; font-size: 16px; font-weight: 600; color: #eee; }
+  header p { margin: 0; font-size: 12px; color: #888; }
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+    height: calc(100vh - 80px);
+  }
+  .pane {
+    border-right: 1px solid #222;
+    overflow: auto;
+  }
+  .pane:last-child { border-right: none; }
+  iframe {
+    width: 100%;
+    border: none;
+    display: block;
+    min-height: 1200px;
+  }
+  @media (max-width: 1500px) {
+    .grid { grid-template-columns: 1fr; height: auto; }
+    .pane { border-right: none; border-bottom: 1px solid #222; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>!stats image — current vs. redesign</h1>
+  <p>Both mockups render at 720px wide, matching the current canvas output. Open each file directly to view at native size without iframe.</p>
+</header>
+<div class="grid">
+  <div class="pane"><iframe src="00-current.html"></iframe></div>
+  <div class="pane"><iframe src="01-redesign.html"></iframe></div>
+</div>
+</body>
+</html>
