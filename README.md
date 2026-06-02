@@ -1,4 +1,4 @@
-# WAV Bot — 10.1.4 (statstest debug isolation)
+# WAV Bot — 10.2.0 (stats image via panel, bot no longer uploads)
 
 10.0 adds an owner-only Role Doctor plus activity aliases so mismatched
 presence names can resolve to the right premade role instead of creating
@@ -12,6 +12,50 @@ risked stalling and every restart doubled the rename load. The live
 activity surface now lives in a single auto-updating embed in a dedicated
 stats channel. Roles stay named cleanly (`Playing Rust`), and the embed
 shows time per activity, member count, and who is in it.
+
+## 10.2.0
+
+**Architectural pivot: the bot no longer uploads files to Discord.**
+
+Three sessions of debugging across 10.1.1–10.1.4 ruled out, with evidence,
+every layer below discord.js: buffer format (PNG vs JPEG), buffer size
+(67 B fails the same as 54 KB), the interaction webhook vs `channel.send`,
+`runUsersView` state and role-icon CDN loads, Fly→Discord network, and
+Fly→Google-Cloud-Storage network (where discord.js 14.16+'s two-step
+attachment flow uploads the file body). The 10.1.4 `!statstest` probe
+confirmed a 67-byte hardcoded PNG via `channel.send({ files })` hangs to
+its 30 s ceiling exactly like a 54 KB stats render did. The remaining
+suspect is discord.js's REST handler itself, which silently wedges
+multipart uploads on this host. Rather than instrument deeper or pin to
+an older discord.js, 10.2.0 sidesteps the entire class of bug:
+
+- New public route in `src/panel.js`: `GET /stats/<guildId>.jpg`. No auth
+  (Discord's image proxy can't send our `PANEL_TOKEN`), validates the
+  guild ID is a snowflake, renders `renderUsersDefault` via
+  `@napi-rs/canvas` and returns it as `image/jpeg`. In-memory cache,
+  30 s TTL per guild, so repeated `!stats` invocations and Discord's
+  proxy re-fetches don't re-render.
+- `!stats` / `/stats` rewritten in `src/stats.js`: builds a Discord
+  embed with `.setImage(<panel URL>)` and replies with that. Discord's
+  image proxy fetches the URL **from the panel**, not from the bot. The
+  bot itself never speaks multipart again. URL cache-busts once per
+  minute (`?t=<unix-minute>`) so the image refreshes when users re-run
+  the command.
+- Public URL resolved from `PANEL_PUBLIC_URL` env var if set, otherwise
+  `https://${FLY_APP_NAME}.fly.dev` (Fly sets `FLY_APP_NAME` for free).
+  Also gated on `PANEL_TOKEN` being set — without it the panel doesn't
+  start, the `/stats/<id>.jpg` route doesn't exist, and we'd otherwise
+  show users a broken-image icon. Both fall back cleanly to the existing
+  text-only data embed.
+- Dead code removed: `sendImage`, `withUploadTimeout`, and `playingCmd`
+  in `src/stats.js`. `playingCmd` was never registered in
+  `src/commands.js` anyway. The retry/timeout machinery was three
+  sessions of fighting a symptom; with no upload to retry it's gone.
+- `!statstest` (owner-only, 10.1.4) is retained as a regression probe in
+  case future deploys re-introduce a multipart code path.
+- New exports from `src/stats.js`: `buildUserMembers`, `buildStatsTotals`,
+  `roleForGameKey` — so the panel route can share the data-prep code
+  paths and the data shape stays in one place.
 
 ## 10.1.4
 

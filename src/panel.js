@@ -1,6 +1,52 @@
 const http = require("http");
 const crypto = require("crypto");
 const { collectRows } = require("./stats-channel");
+const { buildUserMembers, buildStatsTotals, roleForGameKey } = require("./stats");
+const { renderUsersDefault } = require("./stats-image");
+
+// ── stats PNG cache ────────────────────────────────────────────────────
+// 10.2.0 pivots the !stats image away from bot-side multipart uploads
+// (which silently hang on this host — see comments in src/stats.js) and
+// onto a panel-served URL that Discord's image proxy fetches itself. The
+// render is moderately expensive (canvas + role-icon CDN loads on cold
+// cache), so we cache the rendered JPEG per guild for 30s. Discord's own
+// image proxy then caches it further upstream; the !stats command appends
+// a per-minute cache-busting query so repeated invocations get a fresh
+// image at most once per minute.
+const STATS_CACHE_TTL_MS = 30_000;
+const statsImageCache = new Map(); // guildId -> { buffer, mime, generatedAt }
+
+async function renderStatsImage(client, guildId) {
+  const cached = statsImageCache.get(guildId);
+  if (cached && Date.now() - cached.generatedAt < STATS_CACHE_TTL_MS) {
+    return cached;
+  }
+  const guild = client.guilds.cache.get(guildId);
+  if (!guild) {
+    const e = new Error("guild_not_found");
+    e.httpCode = 404;
+    throw e;
+  }
+  const members = buildUserMembers(guild, "monthly");
+  if (members.length === 0) {
+    const e = new Error("no_members");
+    e.httpCode = 404;
+    throw e;
+  }
+  const totals = buildStatsTotals(guild, members);
+  const buffer = await renderUsersDefault({
+    guildName: guild.name,
+    title: "Top Members — Last 30 Days",
+    lookbackLabel: "30d",
+    totals,
+    members,
+    guild,
+    roleByGameKey: (key) => roleForGameKey(guild, key),
+  });
+  const entry = { buffer, mime: "image/jpeg", generatedAt: Date.now() };
+  statsImageCache.set(guildId, entry);
+  return entry;
+}
 
 function safeEqual(a, b) {
   if (typeof a !== "string" || typeof b !== "string") return false;
@@ -295,6 +341,30 @@ function startPanel(client) {
     if (url.pathname === "/healthz") {
       res.writeHead(200, { "Content-Type": "text/plain" });
       res.end("ok");
+      return;
+    }
+
+    // Public, un-authed stats image. Discord's image-proxy fetches this
+    // when rendering the embed sent by !stats; gating it with a token
+    // would break that fetch (Discord doesn't send our key). The data is
+    // visible inside the Discord server anyway. Validate that the path
+    // looks like a snowflake before doing any work.
+    const statsMatch = url.pathname.match(/^\/stats\/(\d{17,20})\.jpg$/);
+    if (statsMatch) {
+      const guildId = statsMatch[1];
+      renderStatsImage(client, guildId).then((entry) => {
+        res.writeHead(200, {
+          "Content-Type": entry.mime,
+          "Cache-Control": "public, max-age=60",
+          "Content-Length": entry.buffer.length,
+        });
+        res.end(entry.buffer);
+      }).catch((err) => {
+        const code = err.httpCode || 500;
+        res.writeHead(code, { "Content-Type": "text/plain" });
+        res.end(err.message);
+        if (code >= 500) console.error(`[panel] /stats/${guildId}.jpg failed:`, err);
+      });
       return;
     }
 

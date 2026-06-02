@@ -10,44 +10,45 @@ function displayNameFor(guild, userId) {
   return `user ${userId.slice(-4)}`;
 }
 
-const UPLOAD_TIMEOUT_MS = 20_000;
-
-// Hard timeout wrapper — Discord intermittently leaves multipart uploads
-// hung mid-stream; undici doesn't always surface that as a thrown error, so
-// the inner promise can wait forever. Without this the whole command handler
-// freezes and queues up behind every subsequent !stats invocation.
-function withUploadTimeout(promise, label) {
-  return new Promise((resolve, reject) => {
-    const t = setTimeout(() => {
-      reject(new Error(`upload-timeout:${label} after ${UPLOAD_TIMEOUT_MS}ms`));
-    }, UPLOAD_TIMEOUT_MS);
-    promise.then(
-      (v) => { clearTimeout(t); resolve(v); },
-      (e) => { clearTimeout(t); reject(e); },
-    );
-  });
+// As of 10.2.0 the bot no longer uploads files to Discord. Three sessions
+// of debugging across 10.1.1–10.1.4 ruled out buffer format, buffer size,
+// the interaction-webhook endpoint, runUsersView state, Fly→Discord
+// network, and Fly→GCS network — every layer below discord.js. The
+// remaining suspect is discord.js's two-step attachment flow itself
+// (discord.js 14.16+ POSTs the file to a Google Cloud Storage pre-signed
+// URL, then references the handle), which silently hangs without erroring
+// on this host. 10.1.4's !statstest debug command confirmed a 67-byte PNG
+// hangs to its 30 s ceiling exactly the same way a 54 KB JPEG did.
+//
+// The pivot: serve the stats PNG from the HTTP panel that already runs on
+// :8080, and embed Discord's image-proxy fetch URL. Discord pulls the
+// image FROM the panel — the bot itself never speaks multipart again.
+//
+// Returns the public base URL the panel is reachable at, or null if we
+// can't figure it out (in which case statsCmd degrades to a text-only
+// data embed).
+function panelBaseUrl() {
+  if (process.env.PANEL_PUBLIC_URL) return process.env.PANEL_PUBLIC_URL.replace(/\/+$/, "");
+  if (process.env.FLY_APP_NAME) return `https://${process.env.FLY_APP_NAME}.fly.dev`;
+  return null;
 }
 
-async function sendImage(ctx, buffer, name) {
-  const payload = {
-    files: [new AttachmentBuilder(buffer, { name })],
-    allowedMentions: { parse: [] },
-  };
-  // Send via the channel rather than ctx.reply so the upload isn't bound to
-  // the interaction token. The interaction-webhook PATCH (editReply) was
-  // intermittently stalling the multipart upload; channel.send hits a
-  // different endpoint that doesn't have this problem.
-  const sendPromise = ctx.channel
-    ? ctx.channel.send(payload)
-    : ctx.reply(payload);
-  const result = await withUploadTimeout(Promise.resolve(sendPromise), "send");
-
-  // Best-effort tidy of the deferred slash-command reply so Discord doesn't
-  // leave "thinking..." showing. Don't await — failure here is harmless.
-  if (ctx.type === "interaction") {
-    ctx.reply({ content: "📊 Stats above ⬆️", allowedMentions: { parse: [] } }).catch(() => {});
-  }
-  return result;
+// Per-minute cache bucket so Discord's image proxy re-fetches at most once
+// per minute. A fresh URL on every !stats invocation would defeat its
+// cache; a fully static URL would never refresh. The minute bucket is a
+// compromise that lines up with how stale we're willing to let the image
+// get.
+//
+// Also gated on PANEL_TOKEN: startPanel() refuses to start the HTTP
+// server when PANEL_TOKEN is unset, so without it the /stats/<id>.jpg
+// route doesn't exist and the embed would show a broken-image icon to
+// users. Falling back to the text embed in that case is cleaner.
+function statsImageUrl(guild) {
+  if (!process.env.PANEL_TOKEN) return null;
+  const base = panelBaseUrl();
+  if (!base) return null;
+  const bucket = Math.floor(Date.now() / 60_000);
+  return `${base}/stats/${guild.id}.jpg?t=${bucket}`;
 }
 
 const sumLeaderboard = (guildId, type, period) =>
@@ -132,6 +133,20 @@ function buildStatsEmbed(guild, members, totals, { title, lookbackLabel }) {
     .setTimestamp(new Date());
 }
 
+// Shared totals builder — used by the in-Discord text-embed fallback AND
+// by the panel route that renders the stats PNG. Lives here so the data
+// shape stays in one place.
+function buildStatsTotals(guild, members) {
+  return {
+    voiceDay: sumLeaderboard(guild.id, "voice", "daily"),
+    voiceWeek: sumLeaderboard(guild.id, "voice", "weekly"),
+    voiceMonth: sumLeaderboard(guild.id, "voice", "monthly"),
+    voiceLookback: members.reduce((s, m) => s + m.voiceMinutes, 0),
+    gameLookback: members.reduce((s, m) => s + m.gameMinutes, 0),
+    activeMembers: members.length,
+  };
+}
+
 // Shared builder for the 30-day top members command.
 function buildUserMembers(guild, period) {
   const voice = tracker.userTotals(guild.id, "voice", period).filter((r) => r.minutes > 0);
@@ -161,42 +176,39 @@ async function runUsersView(ctx, guild, { period, title, lookbackLabel }) {
     return ctx.reply("📭 No member activity tracked yet — start playing or join a voice channel.");
   }
 
-  const totals = {
-    voiceDay: sumLeaderboard(guild.id, "voice", "daily"),
-    voiceWeek: sumLeaderboard(guild.id, "voice", "weekly"),
-    voiceMonth: sumLeaderboard(guild.id, "voice", "monthly"),
-    voiceLookback: members.reduce((s, m) => s + m.voiceMinutes, 0),
-    gameLookback: members.reduce((s, m) => s + m.gameMinutes, 0),
-    activeMembers: members.length,
-  };
+  const totals = buildStatsTotals(guild, members);
 
-  // Try PNG first; fall back to the embed if rendering or uploading fails.
-  // The PNG used to "crash" pre-10.0.1 because Discord intermittently aborts
-  // multipart uploads — sendImage retries, but if it gives up the user used
-  // to see nothing. Now we ping monitoring and reply with the embed instead.
-  try {
-    const { renderUsersDefault } = require("./stats-image");
-    const buffer = await renderUsersDefault({
-      guildName: guild.name,
-      title,
-      lookbackLabel,
-      totals,
-      members,
-      guild,
-      roleByGameKey: (key) => roleForGameKey(guild, key),
-    });
-    console.log(`[stats] render produced ${buffer.length} bytes (jpeg)`);
-    return await sendImage(ctx, buffer, "stats-members.jpg");
-  } catch (err) {
-    console.warn(`[stats] PNG path failed (${err.message}); falling back to embed`);
-    sendMonitoring(`⚠️ /stats PNG fallback to embed in **${guild.name}**: ${err.message}`).catch(() => {});
-    const embed = buildStatsEmbed(guild, members, totals, { title, lookbackLabel });
+  // Primary path: send a Discord embed that POINTS AT the panel-hosted
+  // stats PNG. Discord's image proxy fetches the URL from us; the bot
+  // never speaks multipart. See the comment above panelBaseUrl() for why.
+  const imageUrl = statsImageUrl(guild);
+  if (imageUrl) {
+    const embed = new EmbedBuilder()
+      .setColor(0xb084f0)
+      .setTitle(`🏆 ${title || "Top Members - Last 30 Days"}`)
+      .setDescription(`**${guild.name}** • ${lookbackLabel || "30d"} leaderboard, ranked by tracked voice activity.`)
+      .setImage(imageUrl)
+      .setFooter({ text: `${lookbackLabel || "30d"} stats • image refreshes once per minute` })
+      .setTimestamp(new Date());
     try {
       return await ctx.reply({ embeds: [embed], allowedMentions: { parse: [] } });
-    } catch {
-      try { return await ctx.followUp({ embeds: [embed], allowedMentions: { parse: [] } }); } catch {}
-      if (ctx.channel) return ctx.channel.send({ embeds: [embed], allowedMentions: { parse: [] } });
+    } catch (err) {
+      console.warn(`[stats] image-embed reply failed (${err.message}); falling back to text embed`);
+      sendMonitoring(`⚠️ /stats image-embed fallback in **${guild.name}**: ${err.message}`).catch(() => {});
+      // fall through to text-embed path
     }
+  } else {
+    console.warn("[stats] no PANEL_PUBLIC_URL or FLY_APP_NAME — falling back to text embed");
+  }
+
+  // Fallback path: text-only data embed. Used when the panel URL can't be
+  // resolved or the image-embed reply itself failed. No multipart upload.
+  const embed = buildStatsEmbed(guild, members, totals, { title, lookbackLabel });
+  try {
+    return await ctx.reply({ embeds: [embed], allowedMentions: { parse: [] } });
+  } catch {
+    try { return await ctx.followUp({ embeds: [embed], allowedMentions: { parse: [] } }); } catch {}
+    if (ctx.channel) return ctx.channel.send({ embeds: [embed], allowedMentions: { parse: [] } });
   }
 }
 
@@ -220,56 +232,12 @@ async function statsCmd(ctx) {
   }
 }
 
-async function playingCmd(ctx) {
-  const guild = ctx.guild;
-  if (!guild) return ctx.reply("This command only works in a server.");
-
-  await ctx.defer();
-
-  try {
-    const guildRoleMap = roleMap[guild.id] || {};
-    // Build [{ roleName, count, role }] by reading the live member count off
-    // each tracked role. Anything with zero current members is dropped.
-    const rows = [];
-    for (const [roleName, roleId] of Object.entries(guildRoleMap)) {
-      const role = guild.roles.cache.get(roleId);
-      if (!role) continue;
-      // Only count human members (the bot itself usually doesn't hold these,
-      // but exclude bots defensively to avoid inflating the count).
-      let humans = 0;
-      for (const m of role.members.values()) {
-        if (!m.user.bot) humans++;
-      }
-      if (humans === 0) continue;
-      rows.push({ roleName, count: humans });
-    }
-    rows.sort((a, b) => b.count - a.count || a.roleName.localeCompare(b.roleName));
-
-    if (rows.length === 0) {
-      return ctx.reply("📭 Nobody's currently playing anything tracked.");
-    }
-
-    const totalActive = rows.reduce((s, r) => s + r.count, 0);
-    const roleByName = (name) => {
-      const id = guildRoleMap[name];
-      return id ? guild.roles.cache.get(id) || null : null;
-    };
-
-    const { renderPlaying } = require("./stats-image");
-    const buffer = await renderPlaying({
-      guildName: guild.name,
-      rows,
-      totalActive,
-      roleByName,
-    });
-    return sendImage(ctx, buffer, "playing.png");
-  } catch (err) {
-    console.error("[playing] render error:", err);
-    const msg = `❌ Failed to render: ${err.message}`;
-    try { return await ctx.followUp(msg); } catch {}
-    try { if (ctx.channel) return await ctx.channel.send(msg); } catch {}
-  }
-}
+// playingCmd was removed in 10.2.0. It used sendImage (which no longer
+// exists) and was never registered in src/commands.js anyway. The data it
+// rendered ("currently playing" role + member counts) is already on the
+// HTTP panel's live activity view. If you want it back in Discord, build
+// it as an embed pointing at a new /playing/<guildId>.jpg panel route in
+// the same pattern as /stats.
 
 // ── debug: isolation test for the upload-hang issue ────────────────────
 // Bypasses render, role-icon CDN, interaction defer, big buffer — sends a
@@ -336,4 +304,12 @@ async function statsTestCmd(ctx) {
 // Legacy export — kept so accidental imports don't crash.
 function logActivity() {}
 
-module.exports = { logActivity, statsCmd, playingCmd, statsTestCmd };
+module.exports = {
+  logActivity,
+  statsCmd,
+  statsTestCmd,
+  // exported for the panel route to share the data-prep code paths
+  buildUserMembers,
+  buildStatsTotals,
+  roleForGameKey,
+};
