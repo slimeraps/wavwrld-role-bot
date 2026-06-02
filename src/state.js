@@ -17,6 +17,7 @@ const playtimeResets = {};     // guildId -> { daily: ts, weekly: ts }
 const playtimeHistory = {};    // guildId -> [{ period, endedAt, byType: { type: [{ key, minutes }, ...] } }]
 const voiceChannelNames = {};  // guildId -> { channelId: "last seen name" } (for rendering after rename/delete)
 const statsEmbeds = {};        // guildId -> messageId of the live activity embed (so edits survive restarts)
+const statsImageEmbeds = {};   // guildId -> messageId of the !stats leaderboard embed (so edits survive restarts)
 const unknownActivities = {};  // guildId -> { activityName: { count, firstSeenAt, lastSeenAt, lastSeenByTag, lastSeenById, type } }
 
 if (fs.existsSync(ROLES_FILE)) {
@@ -31,6 +32,7 @@ if (fs.existsSync(ROLES_FILE)) {
       if (Array.isArray(guildData.playtimeHistory)) playtimeHistory[guildId] = guildData.playtimeHistory;
       if (typeof guildData.voiceChannelNames === "object") voiceChannelNames[guildId] = guildData.voiceChannelNames;
       if (typeof guildData.statsEmbedMessageId === "string") statsEmbeds[guildId] = guildData.statsEmbedMessageId;
+      if (typeof guildData.statsImageEmbedMessageId === "string") statsImageEmbeds[guildId] = guildData.statsImageEmbedMessageId;
       if (typeof guildData.unknownActivities === "object") unknownActivities[guildId] = guildData.unknownActivities;
       if (guildData.roles) {
         roleMap[guildId] = guildData.roles;
@@ -61,6 +63,7 @@ function buildSnapshot() {
     ...Object.keys(playtime),
     ...Object.keys(openSessions),
     ...Object.keys(statsEmbeds),
+    ...Object.keys(statsImageEmbeds),
     ...Object.keys(unknownActivities),
   ]);
   for (const guildId of allGuildIds) {
@@ -80,6 +83,7 @@ function buildSnapshot() {
       unknownActivities: unknownActivities[guildId] || {},
     };
     if (statsEmbeds[guildId]) out[guildId].statsEmbedMessageId = statsEmbeds[guildId];
+    if (statsImageEmbeds[guildId]) out[guildId].statsImageEmbedMessageId = statsImageEmbeds[guildId];
     if (guildVolumes[guildId] != null) out[guildId].volume = guildVolumes[guildId];
   }
   return out;
@@ -133,6 +137,7 @@ module.exports = {
   playtimeHistory,
   voiceChannelNames,
   statsEmbeds,
+  statsImageEmbeds,
   unknownActivities,
   saveData,
   scheduleSave,
