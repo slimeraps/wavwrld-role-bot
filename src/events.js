@@ -4,7 +4,7 @@ const { sendMonitoring } = require("./monitoring");
 const client = require("./client");
 const { roleMap, autoManaged, promotedRoles, voiceChannelRoles, saveData } = require("./state");
 const tracker = require("./tracker");
-const { migrateStaleTimerPrefixes, updateStatsEmbed } = require("./stats-channel");
+const { migrateStaleTimerPrefixes, updateStatsEmbed, updateStatsImageEmbed } = require("./stats-channel");
 const { promoteRole, unpromoteRole, checkPromotedRolesEmpty } = require("./promotion");
 const { handlePresence } = require("./presence");
 const { cleanupEmptyManagedRoles, deleteEmptyBotCreatedRole, untrackManagedRole } = require("./cleanup");
@@ -107,6 +107,12 @@ function register() {
     // for the first interval tick.
     updateStatsEmbed(client).catch((err) => {
       console.warn("[stats-channel] initial render failed:", err.message);
+    });
+
+    // Seed the !stats leaderboard embed too — same channel, posted after the
+    // live activity message so the channel order is fixed.
+    updateStatsImageEmbed(client).catch((err) => {
+      console.warn("[stats-channel] initial !stats render failed:", err.message);
     });
 
     try {
