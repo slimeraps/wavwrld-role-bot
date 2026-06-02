@@ -121,14 +121,14 @@ function hashRows(rows) {
   return parts.join("\n");
 }
 
-async function fetchOrCreateMessage(channel, guildId) {
-  const messageId = statsEmbeds[guildId];
+async function fetchOrCreateMessage(channel, cache, guildId) {
+  const messageId = cache[guildId];
   if (messageId) {
     try {
       return await channel.messages.fetch(messageId);
     } catch (err) {
-      console.warn(`[stats-channel] cached embed message ${messageId} not found, will create a new one (${err.message})`);
-      delete statsEmbeds[guildId];
+      console.warn(`[stats-channel] cached message ${messageId} not found, will create a new one (${err.message})`);
+      delete cache[guildId];
     }
   }
   return null;
@@ -154,7 +154,7 @@ async function updateStatsEmbed(client) {
     const content = buildContent(guild, rows);
 
     try {
-      const existing = await fetchOrCreateMessage(channel, guild.id);
+      const existing = await fetchOrCreateMessage(channel, statsEmbeds, guild.id);
       if (existing) {
         await existing.edit({ content, embeds: [] });
       } else {
