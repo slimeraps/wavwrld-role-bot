@@ -1,4 +1,4 @@
-# WAV Bot — 10.5.0 (race-free auto-role creation, cheaper `/doctor`)
+# WAV Bot — 10.6.0 (per-member metadata on `/api/activity` rows for the desktop console)
 
 10.0 adds an owner-only Role Doctor plus activity aliases so mismatched
 presence names can resolve to the right premade role instead of creating
@@ -12,6 +12,28 @@ risked stalling and every restart doubled the rename load. The live
 activity surface now lives in a single auto-updating embed in a dedicated
 stats channel. Roles stay named cleanly (`Playing Rust`), and the embed
 shows time per activity, member count, and who is in it.
+
+## 10.6.0
+
+Enriches the `/api/activity` JSON response so each row carries a
+`members` array of `{ id, displayName, sinceTs }` alongside the
+existing `memberNames` / `memberIds`. This unblocks the
+forthcoming desktop console (separate repo
+`wav-bot-console/`), which polls this endpoint every few seconds
+and needs stable per-member identifiers to diff consecutive
+snapshots and surface "X started playing Y" notifications.
+
+- `src/stats-channel.js`: `collectRows` now also attaches a
+  `members: [{id, displayName, sinceTs}]` array to each row.
+  `sinceTs` comes from `activity.createdTimestamp` where a
+  presence-activity matches the row's display name; voice rows
+  set it to `null` (no per-member voice join time tracked).
+- `src/panel.js`: `buildSnapshot` passes the new `members` field
+  through to the JSON response. The existing web panel UI is
+  unchanged — it still reads `memberNames` only — so this is
+  additive and backwards compatible.
+- Reuses the existing `PANEL_TOKEN` Fly secret; no new
+  infrastructure or env vars.
 
 ## 10.5.0
 

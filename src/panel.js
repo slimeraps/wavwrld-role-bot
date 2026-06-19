@@ -105,6 +105,7 @@ function buildSnapshot(client, guildId) {
       minutes: r.minutes,
       count: r.count,
       memberNames: r.memberNames,
+      members: r.members,
     })),
   })).filter((s) => s.rows.length > 0);
 
