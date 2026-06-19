@@ -1,10 +1,11 @@
 {
   "name": "discord-game-role-bot",
-  "version": "10.6.0",
+  "version": "10.7.0",
   "private": true,
   "main": "bot.js",
   "scripts": {
-    "start": "node bot.js"
+    "start": "node bot.js",
+    "test": "node --test tests/*.test.js"
   },
   "engines": {
     "node": ">=20"

@@ -3,6 +3,128 @@ const crypto = require("crypto");
 const { collectRows, buildLiveActivitySnapshot } = require("./stats-channel");
 const { buildUserMembers, buildStatsTotals, roleForGameKey } = require("./stats");
 const { renderUsersDefault, renderLiveActivity } = require("./stats-image");
+const { config } = require("./config");
+
+// ── ActivityType constants (discord.js 14 / Discord API) ──────────────────
+// 0 Playing, 1 Streaming, 2 Listening, 3 Watching, 4 Custom, 5 Competing
+const ACTIVITY_SECTION = {
+  0: "playing",   // Playing
+  1: "playing",   // Streaming → fold into playing
+  2: "listening", // Listening
+  3: "watching",  // Watching
+  // 4 Custom status — skipped entirely
+  5: "other",     // Competing
+};
+
+/**
+ * Build synthetic rows from live Discord presence/voice state for activities
+ * that are NOT already represented by a tracked row from collectRows.
+ *
+ * @param {import('discord.js').Guild} guild
+ * @param {{ [section: string]: Array<{ display: string }> }} trackedRows
+ *   The rows object returned by collectRows — used for deduplication.
+ * @returns {{ [section: string]: Array<object> }}
+ *   An object with the same section keys, each an array of synthetic rows.
+ */
+function collectSyntheticRows(guild, trackedRows) {
+  // Build a set of (section, display-lowercase) pairs already covered by
+  // tracked rows so we can skip duplicates.
+  const tracked = new Set();
+  for (const [section, rows] of Object.entries(trackedRows)) {
+    for (const r of rows) {
+      tracked.add(`${section}\0${r.display.toLowerCase()}`);
+    }
+  }
+
+  // Accumulate per (section, displayLower) → { display, members: [...] }
+  // We keep the first-seen display casing.
+  const buckets = new Map(); // key → { section, display, members: [{id, displayName, sinceTs}] }
+
+  // ── presence activities ─────────────────────────────────────────────────
+  for (const presence of guild.presences.cache.values()) {
+    const member = presence.member;
+    if (!member || member.user?.bot) continue;
+
+    for (const activity of presence.activities || []) {
+      const section = ACTIVITY_SECTION[activity.type];
+      if (!section) continue; // type 4 (Custom) or unknown — skip
+
+      const display = activity.name;
+      if (!display) continue;
+
+      const displayLower = display.toLowerCase();
+      const trackedKey = `${section}\0${displayLower}`;
+      if (tracked.has(trackedKey)) continue; // suppressed by a tracked row
+
+      const bucketKey = `${section}\0${displayLower}`;
+      if (!buckets.has(bucketKey)) {
+        buckets.set(bucketKey, { section, display, members: [] });
+      }
+      buckets.get(bucketKey).members.push({
+        id: member.id,
+        displayName: member.displayName || member.user?.username || member.id,
+        sinceTs: activity.createdTimestamp ?? null,
+      });
+    }
+  }
+
+  // ── voice states ────────────────────────────────────────────────────────
+  for (const vs of guild.voiceStates.cache.values()) {
+    const member = vs.member;
+    if (!member || member.user?.bot) continue;
+    const channel = vs.channel;
+    if (!channel) continue;
+
+    const section = "voice";
+    const display = channel.name;
+    const displayLower = display.toLowerCase();
+
+    const trackedKey = `${section}\0${displayLower}`;
+    if (tracked.has(trackedKey)) continue;
+
+    const bucketKey = `${section}\0${displayLower}`;
+    if (!buckets.has(bucketKey)) {
+      buckets.set(bucketKey, { section, display, members: [] });
+    }
+    buckets.get(bucketKey).members.push({
+      id: member.id,
+      displayName: member.displayName || member.user?.username || member.id,
+      sinceTs: null, // no per-member voice join time tracked
+    });
+  }
+
+  // ── collapse buckets into synthetic rows ────────────────────────────────
+  const result = { playing: [], listening: [], watching: [], voice: [], other: [] };
+
+  for (const { section, display, members } of buckets.values()) {
+    // De-duplicate members who appear twice (e.g. streaming + playing same name)
+    const seen = new Set();
+    const uniqueMembers = members.filter((m) => {
+      if (seen.has(m.id)) return false;
+      seen.add(m.id);
+      return true;
+    });
+
+    uniqueMembers.sort((a, b) => a.displayName.localeCompare(b.displayName));
+
+    result[section].push({
+      display,
+      timeStr: "",
+      minutes: 0,
+      count: uniqueMembers.length,
+      memberNames: uniqueMembers.map((m) => m.displayName),
+      members: uniqueMembers,
+      synthetic: true,
+    });
+  }
+
+  // Sort synthetic rows within each section: count desc, then display asc
+  for (const rows of Object.values(result)) {
+    rows.sort((a, b) => b.count - a.count || a.display.localeCompare(b.display));
+  }
+
+  return result;
+}
 
 // ── live activity image cache ──────────────────────────────────────────
 // The bot edits the live activity embed every 15 s with a fresh ?t bucket,
@@ -90,24 +212,68 @@ const SECTIONS = [
   { key: "other", title: "Other", emoji: "🟣" },
 ];
 
+/**
+ * Build the "active" section from the fallback role, if configured.
+ * Returns the section object, or null if it should be omitted.
+ *
+ * @param {import('discord.js').Guild} guild
+ * @returns {{ key: string, title: string, emoji: string, rows: Array<object> } | null}
+ */
+function buildActiveSection(guild) {
+  if (!config.fallbackRoleId) return null;
+
+  const role = guild.roles.cache.get(config.fallbackRoleId);
+  if (!role) return null;
+
+  const humans = role.members.filter((m) => !m.user.bot);
+  if (!humans.size) return null;
+
+  const memberList = [...humans.values()].map((m) => ({
+    id: m.id,
+    displayName: m.displayName || m.user?.username || m.id,
+  }));
+  memberList.sort((a, b) => a.displayName.localeCompare(b.displayName));
+
+  const row = {
+    display: role.name,
+    timeStr: "",
+    minutes: 0,
+    count: humans.size,
+    memberNames: memberList.map((m) => m.displayName),
+    members: memberList.map((m) => ({ id: m.id, displayName: m.displayName, sinceTs: null })),
+  };
+
+  return { key: "active", title: "Active", emoji: "", rows: [row] };
+}
+
 function buildSnapshot(client, guildId) {
   const guild = guildId ? client.guilds.cache.get(guildId) : client.guilds.cache.first();
   if (!guild) return { error: "guild_not_found", guildId: guildId || null };
 
   const rows = collectRows(guild);
-  const sections = SECTIONS.map(({ key, title, emoji }) => ({
-    key,
-    title,
-    emoji,
-    rows: (rows[key] || []).map((r) => ({
+  const syntheticRows = collectSyntheticRows(guild, rows);
+
+  const existingSections = SECTIONS.map(({ key, title, emoji }) => {
+    const tracked = (rows[key] || []).map((r) => ({
       display: r.display,
       timeStr: r.timeStr,
       minutes: r.minutes,
       count: r.count,
       memberNames: r.memberNames,
       members: r.members,
-    })),
-  })).filter((s) => s.rows.length > 0);
+      synthetic: false,
+    }));
+    const synthetic = syntheticRows[key] || [];
+    return {
+      key,
+      title,
+      emoji,
+      rows: [...tracked, ...synthetic],
+    };
+  }).filter((s) => s.rows.length > 0);
+
+  const activeSection = buildActiveSection(guild);
+  const sections = activeSection ? [activeSection, ...existingSections] : existingSections;
 
   return {
     guildId: guild.id,
@@ -454,4 +620,4 @@ function startPanel(client) {
   return server;
 }
 
-module.exports = { startPanel };
+module.exports = { startPanel, collectSyntheticRows, buildSnapshot, buildActiveSection };

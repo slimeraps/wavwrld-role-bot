@@ -1,4 +1,4 @@
-# WAV Bot — 10.6.0 (per-member metadata on `/api/activity` rows for the desktop console)
+# WAV Bot — 10.7.0 (expose fallback role as "active" section in `/api/activity`)
 
 10.0 adds an owner-only Role Doctor plus activity aliases so mismatched
 presence names can resolve to the right premade role instead of creating
@@ -17,6 +17,21 @@ A separate desktop console at `../wav-bot-console/` ships in tandem
 (v0.1 released same day as bot 10.6.0) — a Windows Electron app that
 polls the `/api/activity` panel endpoint and renders a live native
 view of guild activity with optional toast notifications.
+
+## 10.7.0
+
+Expose fallback-role holders as a new `active` section in `/api/activity`
+(for the desktop console). When `config.fallbackRoleId` is set, the snapshot
+now includes an `active` section as the first entry in `sections`, containing
+one row with all non-bot members currently holding that role — sorted
+alphabetically, with `sinceTs: null` (no per-member assignment time tracked).
+The section is silently omitted when the role ID is unset, the role is not
+found, or it has no human members.
+
+- `src/panel.js`: new `buildActiveSection(guild)` helper; `buildSnapshot`
+  unshifts the result onto `sections` when applicable.
+- `tests/panel.test.js`: 6 new test cases covering all skip conditions, correct
+  shape, alphabetical sort, and bot exclusion.
 
 ## 10.6.0
 
