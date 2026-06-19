@@ -13,6 +13,11 @@ activity surface now lives in a single auto-updating embed in a dedicated
 stats channel. Roles stay named cleanly (`Playing Rust`), and the embed
 shows time per activity, member count, and who is in it.
 
+A separate desktop console at `../wav-bot-console/` ships in tandem
+(v0.1 released same day as bot 10.6.0) — a Windows Electron app that
+polls the `/api/activity` panel endpoint and renders a live native
+view of guild activity with optional toast notifications.
+
 ## 10.6.0
 
 Enriches the `/api/activity` JSON response so each row carries a
