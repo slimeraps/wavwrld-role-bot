@@ -1,4 +1,4 @@
-# WAV Bot — 10.4.2 (wider stats image canvas, 720 → 960 logical px)
+# WAV Bot — 10.5.0 (race-free auto-role creation, cheaper `/doctor`)
 
 10.0 adds an owner-only Role Doctor plus activity aliases so mismatched
 presence names can resolve to the right premade role instead of creating
@@ -12,6 +12,47 @@ risked stalling and every restart doubled the rename load. The live
 activity surface now lives in a single auto-updating embed in a dedicated
 stats channel. Roles stay named cleanly (`Playing Rust`), and the embed
 shows time per activity, member count, and who is in it.
+
+## 10.5.0
+
+Two bug fixes surfaced by `/doctor` output showing 6 orphaned
+`Playing Gemini` roles plus an opcode-8 rate-limit error on the
+follow-up invocation.
+
+**Race-free auto-role creation.** `src/presence.js` previously
+check-then-created in `handlePresence` without any locking, so when
+multiple guild members started the same unmapped activity at the
+same moment (common on bot boot when the presence cache is replayed,
+or when a group launches a game together), several `handlePresence`
+calls would all see `roleMap[guildId][finalRoleName] === undefined`
+and each call `guild.roles.create(...)`. Discord does not dedupe
+roles by name, so you'd end up with N identical `Playing Foo` roles
+and one `roleMap` entry pointing at whichever creation finished last
+— the other N-1 became orphans that auto-delete never reaped because
+the auto-delete path only fires for the one role members were
+actually assigned. The fix introduces a module-level
+`inflightRoleCreations` Map keyed by `${guildId}:${finalRoleName}`.
+The first concurrent caller stores its create-promise; subsequent
+callers `await` the same promise. The promise re-checks the cache
+on entry so that callers serialised behind the lock pick up the
+freshly-created role instead of redundantly creating again. The
+Map entry is cleared in `.finally()` so failed creations don't
+poison future retries.
+
+**Cheaper `/doctor`.** `src/doctor.js`'s `auditGuild` called
+`guild.members.fetch()` unconditionally on every invocation. That
+issues gateway opcode 8 (`REQUEST_GUILD_MEMBERS`) to pull every
+member, and two `/doctor` invocations in quick succession would
+trip Discord's gateway rate limit (the visible "Request with
+opcode 8 was rate limited" error). The `GuildMembers` intent is
+already enabled in `src/client.js`, so the member cache stays warm
+in steady state. The fix only calls `members.fetch()` when the
+cache is actually short (`cache.size < guild.memberCount`) and
+falls back to the cache if the fetch errors, so repeated `/doctor`
+calls are now near-free and the rate limit stops triggering.
+
+To clean up duplicates that already exist from before the fix,
+run `/doctor fix:true` once after deploy.
 
 ## 10.4.2
 

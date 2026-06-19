@@ -1,6 +1,6 @@
 {
   "name": "discord-game-role-bot",
-  "version": "10.4.2",
+  "version": "10.5.0",
   "private": true,
   "main": "bot.js",
   "scripts": {

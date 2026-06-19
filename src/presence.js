@@ -7,6 +7,11 @@ const { checkPromotedRolesEmpty } = require("./promotion");
 const { recordUnknownActivity } = require("./unknown");
 const tracker = require("./tracker");
 
+// In-flight role creations keyed by `${guildId}:${finalRoleName}`. Concurrent
+// presence handlers for the same activity share one create-promise so we don't
+// race and end up with duplicate "Playing Foo" roles.
+const inflightRoleCreations = new Map();
+
 async function handlePresence(presence) {
   const member = presence.member;
   if (!member || member.user.bot) return;
@@ -89,27 +94,44 @@ async function handlePresence(presence) {
           await sendMonitoring(`➕ [DRY RUN] Would create role \`${finalRoleName}\` in **${guild.name}** for activity \`${activity.name}\``);
           continue;
         }
+
+        const inflightKey = `${guildId}:${finalRoleName}`;
+        let creationPromise = inflightRoleCreations.get(inflightKey);
+        if (!creationPromise) {
+          creationPromise = (async () => {
+            // Re-check after entering the lock: a concurrent caller may have
+            // finished creating + persisting before us.
+            const cachedId = roleMap[guildId][finalRoleName];
+            const cached = cachedId ? guild.roles.cache.get(cachedId) : null;
+            if (cached) return cached;
+
+            const created = await guild.roles.create({
+              name: finalRoleName,
+              hoist: true,
+              reason: `Auto-created for game activity`,
+            });
+            console.log(`Created role "${finalRoleName}"`);
+            await sendMonitoring(`➕ **Role created** – \`${created.name}\` (${created.id}) in **${guild.name}** for activity \`${activity.name}\``);
+
+            const promotedCount = (promotedRoles[guildId] || []).length;
+            const targetPos = Math.max(botMember.roles.highest.position - 1 - promotedCount, 0);
+            try {
+              await created.setPosition(targetPos);
+              console.log(`→ Moved "${finalRoleName}" to position ${targetPos}`);
+            } catch (e) {
+              console.warn(`Could not move role "${finalRoleName}":`, e.message);
+            }
+
+            roleMap[guildId][finalRoleName] = created.id;
+            autoManaged[guildId].add(finalRoleName);
+            saveData();
+            return created;
+          })().finally(() => inflightRoleCreations.delete(inflightKey));
+          inflightRoleCreations.set(inflightKey, creationPromise);
+        }
+
         try {
-          role = await guild.roles.create({
-            name: finalRoleName,
-            hoist: true,
-            reason: `Auto-created for game activity`,
-          });
-          console.log(`Created role "${finalRoleName}"`);
-          await sendMonitoring(`➕ **Role created** – \`${role.name}\` (${role.id}) in **${guild.name}** for activity \`${activity.name}\``);
-
-          const promotedCount = (promotedRoles[guildId] || []).length;
-          const targetPos = Math.max(botMember.roles.highest.position - 1 - promotedCount, 0);
-          try {
-            await role.setPosition(targetPos);
-            console.log(`→ Moved "${finalRoleName}" to position ${targetPos}`);
-          } catch (e) {
-            console.warn(`Could not move role "${finalRoleName}":`, e.message);
-          }
-
-          roleMap[guildId][finalRoleName] = role.id;
-          autoManaged[guildId].add(finalRoleName);
-          if (!config.dryRun) saveData();
+          role = await creationPromise;
         } catch (err) {
           console.error(`Failed to create role "${finalRoleName}":`, err.message);
           await sendMonitoring(`❌ Failed to create role \`${finalRoleName}\` in **${guild.name}**: ${err.message}`);

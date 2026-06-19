@@ -53,7 +53,17 @@ function chooseKeepRole(guildId, roles) {
 
 async function auditGuild(guild) {
   const guildId = guild.id;
-  await guild.members.fetch();
+  // GuildMembers intent keeps the member cache warm, so we rely on it for
+  // role.members.size. Skipping guild.members.fetch() avoids hammering the
+  // gateway with opcode 8 (REQUEST_GUILD_MEMBERS) every /doctor run, which
+  // gets rate-limited fast if the command is invoked twice in a row.
+  if (guild.members.cache.size < guild.memberCount) {
+    try {
+      await guild.members.fetch();
+    } catch (err) {
+      console.warn(`Role Doctor: members.fetch failed, using cache (${err.message})`);
+    }
+  }
   await guild.roles.fetch();
 
   const duplicateGroups = [];
