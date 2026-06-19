@@ -40,16 +40,31 @@ function collectRows(guild) {
 
     const cleanName = stripTimerPrefix(roleName);
     const { section, display } = categorize(roleName);
-    const memberIds = [...humans.values()].map((m) => m.id);
+    const humansArr = [...humans.values()];
+    const memberIds = humansArr.map((m) => m.id);
     const source = timerSourceForRole(guildId, roleId, cleanName);
     const minutes = tracker.activeElapsedMinutes(guildId, source.type, source.key, memberIds);
 
-    const memberNames = [...humans.values()]
+    const memberNames = humansArr
       .map((m) => m.displayName || m.user?.username || m.id)
       .sort((a, b) => a.localeCompare(b));
 
+    // Richer per-member info for the desktop console. sinceTs is the activity
+    // start where we can find a matching activity in the member's presence;
+    // null for voice rows (no per-member voice join time tracked).
+    const members = humansArr
+      .map((m) => ({
+        id: m.id,
+        displayName: m.displayName || m.user?.username || m.id,
+        sinceTs: section === "voice"
+          ? null
+          : (m.presence?.activities || [])
+              .find((a) => a?.name && (display.toLowerCase() === a.name.toLowerCase()))?.createdTimestamp ?? null,
+      }))
+      .sort((a, b) => a.displayName.localeCompare(b.displayName));
+
     const timeStr = minutes > 0 ? formatTimerMinutes(minutes) : "—";
-    rows[section].push({ display, minutes, timeStr, count: humans.size, memberNames, memberIds, roleId });
+    rows[section].push({ display, minutes, timeStr, count: humans.size, memberNames, memberIds, members, roleId });
   }
 
   for (const section of Object.keys(rows)) {
