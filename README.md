@@ -1,4 +1,4 @@
-# WAV Bot — 10.8.0 (live times for all activities, including unmatched games)
+# WAV Bot — 10.8.1 (stats-channel embed shows unmatched games too)
 
 10.0 adds an owner-only Role Doctor plus activity aliases so mismatched
 presence names can resolve to the right premade role instead of creating
@@ -17,6 +17,23 @@ A separate desktop console at `../wav-bot-console/` ships in tandem
 (v0.1 released same day as bot 10.6.0) — a Windows Electron app that
 polls the `/api/activity` panel endpoint and renders a live native
 view of guild activity with optional toast notifications.
+
+## 10.8.1
+
+Discord stats-channel live activity embed now includes unmatched-game rows
+the same way the desktop console and `/api/activity` do. 10.8.0 added
+synthetic rows to the panel snapshot, but the bot's own JPEG renderer
+still only sourced from `collectRows`, so members playing games without a
+premade role appeared only as part of the fallback "Active" total without
+the game itself ever showing up.
+
+- `src/stats-channel.js`: `buildLiveActivitySnapshot` now folds
+  `collectSyntheticRows` output into each section alongside the tracked
+  rows, marks synthetic rows with `icon: null` (renderer draws a
+  placeholder circle), and re-sorts each section by minutes.
+- `src/panel.js`: `collectSyntheticRows` and the `liveElapsedMinutes`
+  helper moved into `src/stats-channel.js` so both consumers share one
+  implementation. Panel re-exports it for test back-compat.
 
 ## 10.8.0
 

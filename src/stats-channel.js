@@ -20,6 +20,154 @@ function categorize(roleName) {
   return { section: "other", display: clean };
 }
 
+// ── ActivityType constants (discord.js 14 / Discord API) ──────────────────
+// 0 Playing, 1 Streaming, 2 Listening, 3 Watching, 4 Custom, 5 Competing
+const ACTIVITY_SECTION = {
+  0: "playing",   // Playing
+  1: "playing",   // Streaming → fold into playing
+  2: "listening", // Listening
+  3: "watching",  // Watching
+  // 4 Custom status — skipped entirely
+  5: "other",     // Competing
+};
+
+function liveElapsedMinutes(members) {
+  let max = 0;
+  for (const m of members) {
+    if (!m.sinceTs) continue;
+    const minutes = Math.floor((Date.now() - m.sinceTs) / 60_000);
+    if (minutes > max) max = minutes;
+  }
+  return max;
+}
+
+/**
+ * Build synthetic rows from live Discord presence/voice state for activities
+ * that are NOT already represented by a tracked row from collectRows.
+ *
+ * @param {import('discord.js').Guild} guild
+ * @param {{ [section: string]: Array<{ display: string }> }} trackedRows
+ *   The rows object returned by collectRows — used for deduplication.
+ * @returns {{ [section: string]: Array<object> }}
+ *   An object with the same section keys, each an array of synthetic rows.
+ */
+function collectSyntheticRows(guild, trackedRows) {
+  // Build a set of (section, display-lowercase) pairs already covered by
+  // tracked rows so we can skip duplicates.
+  const tracked = new Set();
+  for (const [section, rows] of Object.entries(trackedRows)) {
+    for (const r of rows) {
+      tracked.add(`${section}\0${r.display.toLowerCase()}`);
+    }
+  }
+
+  // Accumulate per (section, displayLower) → { display, members: [...] }
+  // We keep the first-seen display casing.
+  const buckets = new Map(); // key → { section, display, members: [{id, displayName, sinceTs}] }
+
+  // ── presence activities ─────────────────────────────────────────────────
+  for (const presence of guild.presences.cache.values()) {
+    const member = presence.member;
+    if (!member || member.user?.bot) continue;
+
+    for (const activity of presence.activities || []) {
+      const section = ACTIVITY_SECTION[activity.type];
+      if (!section) continue; // type 4 (Custom) or unknown — skip
+
+      const display = activity.name;
+      if (!display) continue;
+
+      const displayLower = display.toLowerCase();
+      const trackedKey = `${section}\0${displayLower}`;
+      if (tracked.has(trackedKey)) continue; // suppressed by a tracked row
+
+      const bucketKey = `${section}\0${displayLower}`;
+      if (!buckets.has(bucketKey)) {
+        buckets.set(bucketKey, { section, display, members: [] });
+      }
+      buckets.get(bucketKey).members.push({
+        id: member.id,
+        displayName: member.displayName || member.user?.username || member.id,
+        sinceTs: activity.createdTimestamp ?? null,
+      });
+    }
+  }
+
+  // ── voice states ────────────────────────────────────────────────────────
+  for (const vs of guild.voiceStates.cache.values()) {
+    const member = vs.member;
+    if (!member || member.user?.bot) continue;
+    const channel = vs.channel;
+    if (!channel) continue;
+
+    const section = "voice";
+    const display = channel.name;
+    const displayLower = display.toLowerCase();
+
+    const trackedKey = `${section}\0${displayLower}`;
+    if (tracked.has(trackedKey)) continue;
+
+    const bucketKey = `${section}\0${displayLower}`;
+    if (!buckets.has(bucketKey)) {
+      buckets.set(bucketKey, { section, display, members: [] });
+    }
+    buckets.get(bucketKey).members.push({
+      id: member.id,
+      displayName: member.displayName || member.user?.username || member.id,
+      sinceTs: null, // no per-member voice join time tracked
+    });
+  }
+
+  // ── collapse buckets into synthetic rows ────────────────────────────────
+  const result = { playing: [], listening: [], watching: [], voice: [], other: [] };
+
+  for (const { section, display, members } of buckets.values()) {
+    // De-duplicate members who appear twice (e.g. streaming + playing same name)
+    const seen = new Set();
+    const uniqueMembers = members.filter((m) => {
+      if (seen.has(m.id)) return false;
+      seen.add(m.id);
+      return true;
+    });
+
+    uniqueMembers.sort((a, b) => a.displayName.localeCompare(b.displayName));
+
+    let minutes = 0;
+    let timeStr = "—";
+
+    if (section === "playing") {
+      // Raw-name sessions flow into the tracker via presence.js — look them up.
+      const memberIds = uniqueMembers.map((m) => m.id);
+      minutes = tracker.activeElapsedMinutes(guild.id, "game", display, memberIds);
+      if (minutes > 0) timeStr = formatTimerMinutes(minutes);
+    } else if (section === "listening" || section === "watching" || section === "other") {
+      // No tracker persistence for these — compute live from sinceTs.
+      // In practice these synthetic rows only appear for activities without
+      // a premade role; Spotify/YouTube go through the tracked path.
+      minutes = liveElapsedMinutes(uniqueMembers);
+      if (minutes > 0) timeStr = formatTimerMinutes(minutes);
+    }
+    // voice synthetic rows stay timeless
+
+    result[section].push({
+      display,
+      timeStr,
+      minutes,
+      count: uniqueMembers.length,
+      memberNames: uniqueMembers.map((m) => m.displayName),
+      members: uniqueMembers,
+      synthetic: true,
+    });
+  }
+
+  // Sort synthetic rows within each section: count desc, then display asc
+  for (const rows of Object.values(result)) {
+    rows.sort((a, b) => b.count - a.count || a.display.localeCompare(b.display));
+  }
+
+  return result;
+}
+
 function timerSourceForRole(guildId, roleId, cleanName) {
   for (const [channelId, mappedRoleId] of Object.entries(voiceChannelRoles[guildId] || {})) {
     if (mappedRoleId === roleId) return { type: "voice", key: channelId };
@@ -227,23 +375,35 @@ async function loadRoleIcon(role) {
 // in parallel before returning. Called by the panel's /live/<id>.jpg route.
 async function buildLiveActivitySnapshot(guild) {
   const rows = collectRows(guild);
+  const syntheticRows = collectSyntheticRows(guild, rows);
 
   const sections = [];
   const memberIdUnion = new Set();
 
   for (const meta of LIVE_SECTIONS) {
-    const sectionRows = rows[meta.key] || [];
-    if (sectionRows.length === 0) continue;
+    const tracked = rows[meta.key] || [];
+    const synthetic = syntheticRows[meta.key] || [];
+    if (tracked.length === 0 && synthetic.length === 0) continue;
 
-    // Pre-resolve icons in parallel for this section.
-    const withIcons = await Promise.all(sectionRows.map(async (r) => {
+    // Pre-resolve icons in parallel for tracked rows; synthetic rows have no
+    // role so their icon is null (the renderer draws a filled circle placeholder).
+    const trackedWithIcons = await Promise.all(tracked.map(async (r) => {
       const role = r.roleId ? guild.roles.cache.get(r.roleId) : null;
       const icon = await loadRoleIcon(role);
       return { ...r, icon };
     }));
+    const syntheticWithShape = synthetic.map((r) => ({
+      ...r,
+      icon: null,
+      memberIds: (r.members || []).map((m) => m.id),
+    }));
+
+    const merged = [...trackedWithIcons, ...syntheticWithShape].sort(
+      (a, b) => b.minutes - a.minutes || a.display.localeCompare(b.display),
+    );
 
     const sectionMemberIds = new Set();
-    for (const r of withIcons) {
+    for (const r of merged) {
       for (const id of r.memberIds || []) {
         sectionMemberIds.add(id);
         memberIdUnion.add(id);
@@ -255,7 +415,7 @@ async function buildLiveActivitySnapshot(guild) {
       title: meta.title,
       emoji: meta.emoji,
       memberCount: sectionMemberIds.size,
-      rows: withIcons,
+      rows: merged,
     });
   }
 
@@ -271,5 +431,6 @@ module.exports = {
   updateStatsImageEmbed,
   migrateStaleTimerPrefixes,
   collectRows,
+  collectSyntheticRows,
   buildLiveActivitySnapshot,
 };
