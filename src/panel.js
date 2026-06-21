@@ -4,6 +4,8 @@ const { collectRows, buildLiveActivitySnapshot } = require("./stats-channel");
 const { buildUserMembers, buildStatsTotals, roleForGameKey } = require("./stats");
 const { renderUsersDefault, renderLiveActivity } = require("./stats-image");
 const { config } = require("./config");
+const tracker = require("./tracker");
+const { formatTimerMinutes } = require("./util");
 
 // ── ActivityType constants (discord.js 14 / Discord API) ──────────────────
 // 0 Playing, 1 Streaming, 2 Listening, 3 Watching, 4 Custom, 5 Competing
@@ -15,6 +17,16 @@ const ACTIVITY_SECTION = {
   // 4 Custom status — skipped entirely
   5: "other",     // Competing
 };
+
+function liveElapsedMinutes(members) {
+  let max = 0;
+  for (const m of members) {
+    if (!m.sinceTs) continue;
+    const minutes = Math.floor((Date.now() - m.sinceTs) / 60_000);
+    if (minutes > max) max = minutes;
+  }
+  return max;
+}
 
 /**
  * Build synthetic rows from live Discord presence/voice state for activities
@@ -107,10 +119,27 @@ function collectSyntheticRows(guild, trackedRows) {
 
     uniqueMembers.sort((a, b) => a.displayName.localeCompare(b.displayName));
 
+    let minutes = 0;
+    let timeStr = "—";
+
+    if (section === "playing") {
+      // Raw-name sessions flow into the tracker via presence.js — look them up.
+      const memberIds = uniqueMembers.map((m) => m.id);
+      minutes = tracker.activeElapsedMinutes(guild.id, "game", display, memberIds);
+      if (minutes > 0) timeStr = formatTimerMinutes(minutes);
+    } else if (section === "listening" || section === "watching" || section === "other") {
+      // No tracker persistence for these — compute live from sinceTs.
+      // In practice these synthetic rows only appear for activities without
+      // a premade role; Spotify/YouTube go through the tracked path.
+      minutes = liveElapsedMinutes(uniqueMembers);
+      if (minutes > 0) timeStr = formatTimerMinutes(minutes);
+    }
+    // voice synthetic rows stay timeless
+
     result[section].push({
       display,
-      timeStr: "",
-      minutes: 0,
+      timeStr,
+      minutes,
       count: uniqueMembers.length,
       memberNames: uniqueMembers.map((m) => m.displayName),
       members: uniqueMembers,

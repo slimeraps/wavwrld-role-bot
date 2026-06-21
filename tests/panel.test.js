@@ -87,7 +87,7 @@ test("1. synthetic playing row created for un-mapped presence activity", () => {
   assert.equal(row.display, "Cyberpunk 2077");
   assert.equal(row.synthetic, true);
   assert.equal(row.count, 1);
-  assert.equal(row.timeStr, "");
+  assert.equal(row.timeStr, "—");
   assert.equal(row.minutes, 0);
   assert.deepEqual(row.memberNames, ["Alice"]);
   assert.deepEqual(row.members, [{ id: "u1", displayName: "Alice", sinceTs: 123 }]);
@@ -495,4 +495,69 @@ test("active: bots are excluded from active section members", () => {
   } finally {
     configModule.config.fallbackRoleId = saved;
   }
+});
+
+test("8. synthetic playing row gets minutes from tracker.activeElapsedMinutes", () => {
+  const tracker = require("../src/tracker");
+  const { openSessions, playtime } = require("../src/state");
+  const guildId = "g-panel-time-1";
+  // Clear any state from previous tests
+  delete openSessions[guildId];
+  delete playtime[guildId];
+
+  // Open a session 5 minutes in the past so activeElapsedMinutes returns >= 5
+  tracker.observePresence(guildId, "game", "Forza Horizon 6", "u1");
+  openSessions[guildId][`game|Forza Horizon 6|u1`].startedAt = Date.now() - 5 * 60_000;
+
+  const guild = makeGuild({
+    guildId,
+    presences: [
+      makePresence({
+        memberId: "u1",
+        displayName: "Alice",
+        activities: [makeActivity({ type: 0, name: "Forza Horizon 6", createdTimestamp: 0 })],
+      }),
+    ],
+  });
+
+  const synth = collectSyntheticRows(guild, EMPTY_TRACKED);
+  assert.equal(synth.playing.length, 1);
+  const row = synth.playing[0];
+  assert.ok(row.minutes >= 5, `expected minutes >= 5, got ${row.minutes}`);
+  assert.notEqual(row.timeStr, "—", "timeStr should be formatted when minutes > 0");
+});
+
+test("9. synthetic listening row gets live-elapsed minutes from sinceTs", () => {
+  const guild = makeGuild({
+    presences: [
+      makePresence({
+        memberId: "u1",
+        displayName: "Alice",
+        activities: [
+          // 10 minutes ago
+          makeActivity({ type: 2, name: "SomeMusicApp", createdTimestamp: Date.now() - 10 * 60_000 }),
+        ],
+      }),
+    ],
+  });
+
+  const synth = collectSyntheticRows(guild, EMPTY_TRACKED);
+  assert.equal(synth.listening.length, 1);
+  const row = synth.listening[0];
+  assert.ok(row.minutes >= 10, `expected minutes >= 10, got ${row.minutes}`);
+  assert.notEqual(row.timeStr, "—");
+});
+
+test("10. synthetic voice row stays timeless", () => {
+  const guild = makeGuild({
+    voiceStates: [
+      makeVoiceState({ memberId: "u1", displayName: "Alice", channelName: "General" }),
+    ],
+  });
+
+  const synth = collectSyntheticRows(guild, EMPTY_TRACKED);
+  assert.equal(synth.voice.length, 1);
+  const row = synth.voice[0];
+  assert.equal(row.minutes, 0);
+  assert.equal(row.timeStr, "—");
 });
