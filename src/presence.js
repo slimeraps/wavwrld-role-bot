@@ -80,6 +80,11 @@ async function handlePresence(presence) {
       }
     } else if (onlyUsePremadeRoles) {
       hasUnmatchedActivity = true;
+      // Track time for activities the bot won't make a role for (e.g. random games
+      // when onlyUsePremadeRoles=true). Keyed by raw activity.name so panel.js's
+      // synthetic rows can look up minutes via tracker.activeElapsedMinutes.
+      tracker.observePresence(guildId, "game", activity.name, member.id);
+      currentTargetRoleNames.add(activity.name);
       continue;
     } else {
       const finalRoleName = ensurePlayingPrefix(getTargetRoleName(activity.name));
@@ -214,6 +219,16 @@ async function handlePresence(presence) {
       }
     }
   }
+
+  // Close any raw-name sessions for this member whose activity is no longer
+  // in the current presence. Role-managed keys (autoManaged) are excluded
+  // because the loop above already owns their lifecycle.
+  tracker.closeStaleRawSessions(
+    guildId,
+    member.id,
+    currentTargetRoleNames,
+    autoManaged[guildId],
+  );
 
   if (removedPromotedRole) {
     await checkPromotedRolesEmpty(guild);
