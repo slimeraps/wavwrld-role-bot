@@ -72,53 +72,16 @@ saw the activity.
 
 ## Change set
 
-### Change 1 — `src/presence.js` observes more activities
+### Change 1 — `src/presence.js` observes unmatched game activities
 
-Two edits inside `handlePresence`.
+Two edits inside `handlePresence`. **The existing top-of-loop guard
+`if (activity.type !== 0 && !hasConfig) continue;` stays.** That guard is
+load-bearing: it's what lets Spotify (type 2 Listening) and YouTube
+(type 3 Watching) flow into the role-assignment path because both have
+entries in `premadeRoleIds`, so `hasConfig` is true and the guard does not
+fire. Replacing it with a type-only allow-list would break that.
 
-**1a. Skip non-game activity types early in the loop.** They will be handled
-live by the panel and should not influence role assignment, fallback role,
-or auto-cleanup logic.
-
-```js
-// Discord ActivityType: 0 Playing, 1 Streaming, 2 Listening, 3 Watching,
-// 4 Custom, 5 Competing. Custom is already rejected upstream by the type-4
-// guard in recordUnknownActivity / shouldRecordUnknownActivity. We treat
-// 0/1/5 as "game-like" for tracking purposes.
-const TRACKABLE_GAME_TYPES = new Set([0, 1, 5]);
-```
-
-Replace the existing line:
-
-```js
-if (activity.type !== 0 && !hasConfig) continue;
-```
-
-with:
-
-```js
-if (!TRACKABLE_GAME_TYPES.has(activity.type)) continue;
-```
-
-This drops Listening (2) and Watching (3) out of the role-assignment +
-tracker path entirely. They will get times in the panel via `createdTimestamp`
-arithmetic (see Change 2).
-
-> **Note on `hasConfig`.** The old guard let activity types other than 0
-> *through* if they had explicit config (e.g. an `activityRoleMap` entry for
-> a Listening activity). That was theoretical — no current config relies on
-> it. If we ever need it back we add an explicit allow-list to the config
-> schema; not in scope here.
->
-> **Note on type 1 / 5 reaching fallback logic.** Before this change, only
-> type 0 (Playing) without config could reach the `else if (onlyUsePremadeRoles)`
-> branch that flips `hasUnmatchedActivity = true` and ultimately assigns the
-> fallback role. After this change, types 1 (Streaming) and 5 (Competing)
-> reach it too. That's the correct behavior — someone streaming an unknown
-> game should be "Active" same as someone playing one — but it's a small
-> visible behavior change worth knowing about.
-
-**1b. Track unmatched game activities by raw `activity.name`.** Where the
+**1a. Track unmatched game activities by raw `activity.name`.** Where the
 loop currently bails on unmatched games:
 
 ```js
@@ -145,7 +108,7 @@ Raw activity names are not in `autoManaged[guildId]`, so they would never
 be removed anyway — but adding them keeps the semantics tight: anything
 this member is currently doing that we care about is in the set.
 
-**1c. Close raw-name sessions when the activity stops.** The existing
+**1b. Close raw-name sessions when the activity stops.** The existing
 cleanup loop walks `autoManaged[guildId]` and calls `observeAbsence` when
 a role-managed activity stops. Raw-name sessions are not in `autoManaged`,
 so they need their own close path. After the existing cleanup loop, add:
@@ -189,6 +152,9 @@ for (const { section, display, members } of buckets.values()) {
     if (minutes > 0) timeStr = formatTimerMinutes(minutes);
   } else if (section === "listening" || section === "watching" || section === "other") {
     // No tracker persistence for these — compute live from sinceTs.
+    // In practice these synthetic rows only appear for non-premade listening
+    // / watching activities (Spotify, YouTube already have premade roles
+    // and flow through the tracked path in collectRows).
     minutes = liveElapsedMinutes(uniqueMembers);
     if (minutes > 0) timeStr = formatTimerMinutes(minutes);
   }
@@ -270,7 +236,7 @@ Matches the existing sort in `collectRows`.
 
 ## Files touched
 
-- `src/presence.js` — Changes 1a, 1b, 1c.
+- `src/presence.js` — Changes 1a, 1b.
 - `src/panel.js` — Change 2 (imports + `collectSyntheticRows` body + sort
   in `buildSnapshot`).
 - `src/tracker.js` — only if we choose to expose a `closeStaleSessions`
