@@ -1,4 +1,4 @@
-# WAV Bot — 10.7.0 (expose fallback role as "active" section in `/api/activity`)
+# WAV Bot — 10.8.0 (live times for all activities, including unmatched games)
 
 10.0 adds an owner-only Role Doctor plus activity aliases so mismatched
 presence names can resolve to the right premade role instead of creating
@@ -17,6 +17,31 @@ A separate desktop console at `../wav-bot-console/` ships in tandem
 (v0.1 released same day as bot 10.6.0) — a Windows Electron app that
 polls the `/api/activity` panel endpoint and renders a live native
 view of guild activity with optional toast notifications.
+
+## 10.8.0
+
+Live activity panel and `/api/activity` now show real elapsed times for
+every game — including those without a premade Discord role. The bot
+tracks unmatched game activities under their raw `activity.name` so the
+tracker accumulates minutes without creating any new roles. Listening
+and Watching synthetic rows (rare — Spotify and YouTube already have
+premade roles) display a live-computed elapsed time from
+`activity.createdTimestamp`. `!stats` leaderboards naturally pick up
+the new raw-name game entries. No config changes required;
+`onlyUsePremadeRoles` stays as-is.
+
+- `src/tracker.js`: new `closeStaleRawSessions(activeRawKeys)` helper
+  that closes raw-name sessions no longer present in the active set,
+  mirroring the existing role-session cleanup path.
+- `src/presence.js`: when a presence activity has no matching premade
+  role, the bot now opens a raw-name session keyed off
+  `activity.name` so minutes accumulate without role creation.
+- `src/panel.js`: synthetic rows for unmatched games merge with
+  tracker totals and `activity.createdTimestamp`-derived elapsed
+  times; merged tracked + synthetic rows are sorted by minutes.
+- `tests/tracker.test.js`, `tests/panel.test.js`: new coverage for
+  raw-name session cleanup, synthetic-row time population, and the
+  merged-row sort order.
 
 ## 10.7.0
 
