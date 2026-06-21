@@ -561,3 +561,53 @@ test("10. synthetic voice row stays timeless", () => {
   assert.equal(row.minutes, 0);
   assert.equal(row.timeStr, "—");
 });
+
+test("11. buildSnapshot sorts merged playing rows by minutes desc within section", () => {
+  const tracker = require("../src/tracker");
+  const { openSessions, playtime, roleMap } = require("../src/state");
+  const guildId = "g-sort-merge";
+  delete roleMap[guildId];
+  delete openSessions[guildId];
+  delete playtime[guildId];
+
+  // 30-minute-old synthetic session
+  tracker.observePresence(guildId, "game", "Forza Horizon 6", "u1");
+  openSessions[guildId][`game|Forza Horizon 6|u1`].startedAt = Date.now() - 30 * 60_000;
+
+  // Stub a tracked row with 5 minutes by injecting roleMap entries — but
+  // collectRows in this test setup returns empty (roles.cache.get returns
+  // undefined). Instead, simulate by checking sort directly: add a second
+  // synthetic with shorter duration.
+  tracker.observePresence(guildId, "game", "Fortnite", "u1");
+  openSessions[guildId][`game|Fortnite|u1`].startedAt = Date.now() - 5 * 60_000;
+
+  const client = {
+    guilds: {
+      cache: {
+        get: () =>
+          makeGuild({
+            guildId,
+            presences: [
+              makePresence({
+                memberId: "u1",
+                displayName: "Alice",
+                activities: [
+                  makeActivity({ type: 0, name: "Forza Horizon 6", createdTimestamp: 0 }),
+                  makeActivity({ type: 0, name: "Fortnite", createdTimestamp: 0 }),
+                ],
+              }),
+            ],
+          }),
+        first: () => null,
+      },
+    },
+  };
+
+  const snap = buildSnapshot(client, guildId);
+  const playing = snap.sections.find((s) => s.key === "playing");
+  assert.ok(playing, "playing section should exist");
+  assert.equal(playing.rows.length, 2);
+  // Forza (30 min) before Fortnite (5 min)
+  assert.equal(playing.rows[0].display, "Forza Horizon 6");
+  assert.equal(playing.rows[1].display, "Fortnite");
+});

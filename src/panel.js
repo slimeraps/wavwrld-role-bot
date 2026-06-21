@@ -297,7 +297,9 @@ function buildSnapshot(client, guildId) {
       key,
       title,
       emoji,
-      rows: [...tracked, ...synthetic],
+      rows: [...tracked, ...synthetic].sort(
+        (a, b) => b.minutes - a.minutes || a.display.localeCompare(b.display),
+      ),
     };
   }).filter((s) => s.rows.length > 0);
 
