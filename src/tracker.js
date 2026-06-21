@@ -198,6 +198,22 @@ function bootEnd() {
   scheduleSave();
 }
 
+// Close any "game" sessions for `memberId` whose key is NOT in `keepKeys`
+// and NOT in `ignoreKeys`. Used by presence.js to close raw-activity-name
+// sessions when the activity stops, while leaving role-managed sessions
+// (which are in `ignoreKeys`) for the existing autoManaged cleanup path.
+function closeStaleRawSessions(guildId, memberId, keepKeys, ignoreKeys) {
+  const guildSessions = openSessions[guildId];
+  if (!guildSessions) return;
+  for (const open of Object.values(guildSessions)) {
+    if (open.type !== "game") continue;
+    if (open.subjectId !== memberId) continue;
+    if (keepKeys.has(open.key)) continue;
+    if (ignoreKeys.has(open.key)) continue;
+    observeAbsence(guildId, "game", open.key, memberId);
+  }
+}
+
 // --- read API for /stats ---
 
 function leaderboard(guildId, type, period) {
@@ -317,4 +333,5 @@ module.exports = {
   getResets,
   getVoiceChannelName,
   rememberVoiceChannelName,
+  closeStaleRawSessions,
 };
