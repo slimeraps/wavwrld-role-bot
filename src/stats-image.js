@@ -75,6 +75,32 @@ async function loadRoleIconCached(role) {
   }
 }
 
+// In-memory user-avatar cache keyed by the resolved URL. The URL contains the
+// avatar hash (or default-avatar index), so a user changing their picture
+// naturally produces a new URL and misses the cache. Failures cache `null`
+// so we don't retry a broken CDN URL on every render.
+const userAvatarCache = new Map();
+
+async function loadUserAvatarCached(guild, userId) {
+  if (!guild || !userId) return null;
+  const member = guild.members?.cache?.get(userId) || null;
+  let url = null;
+  if (member && typeof member.displayAvatarURL === "function") {
+    url = member.displayAvatarURL({ extension: "png", size: 64, forceStatic: true });
+  }
+  if (!url) return null;
+  if (userAvatarCache.has(url)) return userAvatarCache.get(url);
+  try {
+    const img = await loadImage(url);
+    userAvatarCache.set(url, img);
+    return img;
+  } catch (err) {
+    console.warn(`[stats] could not load avatar for user ${userId}: ${err.message}`);
+    userAvatarCache.set(url, null);
+    return null;
+  }
+}
+
 // Single time formatter used everywhere in the dashboards. Minute-based for
 // short spans, h+m for medium, d+h for long. Drops zero suffixes ("8h" not
 // "8h 0m") so the output stays compact.
@@ -821,4 +847,5 @@ module.exports = {
   LIVE_SECTIONS,
   renderVoice30d,
   renderPlaying,
+  loadUserAvatarCached,
 };
