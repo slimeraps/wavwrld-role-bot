@@ -1,5 +1,5 @@
 const { config } = require("./config");
-const { stripTimerPrefix, formatTimerMinutes, sleep } = require("./util");
+const { stripTimerPrefix, formatTimerMinutes, sleep, stripMedalSuffix } = require("./util");
 const { sendMonitoring } = require("./monitoring");
 const { roleMap, voiceChannelRoles, statsEmbeds, statsImageEmbeds, saveData } = require("./state");
 const tracker = require("./tracker");
@@ -41,29 +41,43 @@ function liveElapsedMinutes(members) {
   return max;
 }
 
+// Normalize a display string for dedup comparison: lowercase, then drop
+// every character that isn't a letter or digit. Lets us treat "WAVLINK",
+// "🔊WAVLINK", and "Wav-Link!" as the same key while keeping the original
+// casing for display.
+function normalizeDisplayKey(s) {
+  return String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
 /**
  * Build synthetic rows from live Discord presence/voice state for activities
  * that are NOT already represented by a tracked row from collectRows.
  *
+ * Dedup against tracked rows is two-pronged: an exact (normalized) display
+ * match suppresses a bucket outright, and member-set containment combined
+ * with a substring match suppresses cases where the tracked role uses a
+ * short alias for the raw Discord activity ("Assetto" vs "Assetto Corsa (CM)")
+ * or where a voice role's name omits the channel's emoji prefix.
+ *
  * @param {import('discord.js').Guild} guild
- * @param {{ [section: string]: Array<{ display: string }> }} trackedRows
+ * @param {{ [section: string]: Array<{ display: string, memberIds?: string[], members?: Array<{id: string}> }> }} trackedRows
  *   The rows object returned by collectRows — used for deduplication.
  * @returns {{ [section: string]: Array<object> }}
  *   An object with the same section keys, each an array of synthetic rows.
  */
 function collectSyntheticRows(guild, trackedRows) {
-  // Build a set of (section, display-lowercase) pairs already covered by
-  // tracked rows so we can skip duplicates.
-  const tracked = new Set();
+  // Per section, list of { ids, displayKey } for each tracked row.
+  const trackedBySection = {};
   for (const [section, rows] of Object.entries(trackedRows)) {
-    for (const r of rows) {
-      tracked.add(`${section}\0${r.display.toLowerCase()}`);
-    }
+    trackedBySection[section] = rows.map((r) => ({
+      ids: new Set(r.memberIds || (r.members || []).map((m) => m.id)),
+      displayKey: normalizeDisplayKey(r.display),
+    }));
   }
 
-  // Accumulate per (section, displayLower) → { display, members: [...] }
+  // Accumulate per (section, displayLower) → { section, display, members: [...] }
   // We keep the first-seen display casing.
-  const buckets = new Map(); // key → { section, display, members: [{id, displayName, sinceTs}] }
+  const buckets = new Map();
 
   // ── presence activities ─────────────────────────────────────────────────
   for (const presence of guild.presences.cache.values()) {
@@ -74,14 +88,12 @@ function collectSyntheticRows(guild, trackedRows) {
       const section = ACTIVITY_SECTION[activity.type];
       if (!section) continue; // type 4 (Custom) or unknown — skip
 
-      const display = activity.name;
+      // Strip Medal suffix so "Rust" and "Rust with Medal" share one bucket
+      // and match the unsuffixed tracker key written by presence.js.
+      const display = stripMedalSuffix(activity.name);
       if (!display) continue;
 
-      const displayLower = display.toLowerCase();
-      const trackedKey = `${section}\0${displayLower}`;
-      if (tracked.has(trackedKey)) continue; // suppressed by a tracked row
-
-      const bucketKey = `${section}\0${displayLower}`;
+      const bucketKey = `${section}\0${display.toLowerCase()}`;
       if (!buckets.has(bucketKey)) {
         buckets.set(bucketKey, { section, display, members: [] });
       }
@@ -102,12 +114,7 @@ function collectSyntheticRows(guild, trackedRows) {
 
     const section = "voice";
     const display = channel.name;
-    const displayLower = display.toLowerCase();
-
-    const trackedKey = `${section}\0${displayLower}`;
-    if (tracked.has(trackedKey)) continue;
-
-    const bucketKey = `${section}\0${displayLower}`;
+    const bucketKey = `${section}\0${display.toLowerCase()}`;
     if (!buckets.has(bucketKey)) {
       buckets.set(bucketKey, { section, display, members: [] });
     }
@@ -129,6 +136,22 @@ function collectSyntheticRows(guild, trackedRows) {
       seen.add(m.id);
       return true;
     });
+
+    // Dedup vs tracked rows in same section. Suppress if either:
+    //   (a) display strings match (normalized: lowercase + alphanumeric only), or
+    //   (b) all members are in some tracked row AND one display contains the
+    //       other (so we don't suppress an unrelated synthetic that happens
+    //       to share a player with a tracked row).
+    const synthKey = normalizeDisplayKey(display);
+    const synthIds = new Set(uniqueMembers.map((m) => m.id));
+    const covered = (trackedBySection[section] || []).some((t) => {
+      if (t.displayKey && synthKey && t.displayKey === synthKey) return true;
+      if (t.ids.size === 0 || synthIds.size === 0) return false;
+      const subset = [...synthIds].every((id) => t.ids.has(id));
+      if (!subset) return false;
+      return t.displayKey.includes(synthKey) || synthKey.includes(t.displayKey);
+    });
+    if (covered) continue;
 
     uniqueMembers.sort((a, b) => a.displayName.localeCompare(b.displayName));
 

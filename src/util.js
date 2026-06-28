@@ -56,6 +56,15 @@ function stripTimerPrefix(name) {
   return name.replace(/^\[\d+(?:h\d*m?|m)\]\s*/, "");
 }
 
+// Discord mutates a game's activity name to "<Game> with Medal" while Medal's
+// screen recorder is active. We treat both forms as the same game everywhere
+// (role lookup, tracker keys, synthetic buckets) so a single session/role
+// covers a player across Medal on/off toggles.
+function stripMedalSuffix(name) {
+  if (typeof name !== "string") return name;
+  return name.replace(/\s+with\s+Medal$/i, "");
+}
+
 function sanitizeVoiceChannelName(name) {
   return name.replace(/[╰┋╭]/g, "").replace(/\s+/g, " ").trim();
 }
@@ -84,4 +93,5 @@ module.exports = {
   sanitizeVoiceChannelName,
   voiceRoleNameForChannel,
   formatTimerMinutes,
+  stripMedalSuffix,
 };

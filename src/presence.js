@@ -1,5 +1,5 @@
 const { config, premadeRoleIdsSet } = require("./config");
-const { getTargetRoleName, getPremadeRoleId, hasActivityConfig, ensurePlayingPrefix, stripTimerPrefix } = require("./util");
+const { getTargetRoleName, getPremadeRoleId, hasActivityConfig, ensurePlayingPrefix, stripTimerPrefix, stripMedalSuffix } = require("./util");
 const { sendMonitoring } = require("./monitoring");
 const { roleMap, autoManaged, promotedRoles, voiceChannelRoles, saveData } = require("./state");
 const { humanMemberCount } = require("./timers");
@@ -36,19 +36,26 @@ async function handlePresence(presence) {
   for (const activity of presence.activities) {
     if (!activity?.name) continue;
 
-    if (blacklist.has(activity.name.toLowerCase())) {
-      console.log(`Skipping blacklisted activity: "${activity.name}"`);
+    // Collapse Discord's "<Game> with Medal" variant onto the base game name
+    // so role lookup, tracker keys, and synthetic dedup all converge.
+    const activityName = stripMedalSuffix(activity.name);
+    const activityForInbox = activityName === activity.name
+      ? activity
+      : { name: activityName, type: activity.type, createdTimestamp: activity.createdTimestamp };
+
+    if (blacklist.has(activityName.toLowerCase())) {
+      console.log(`Skipping blacklisted activity: "${activityName}"`);
       continue;
     }
 
-    const hasConfig = hasActivityConfig(activity.name);
-    if (!hasConfig) recordUnknownActivity(guildId, activity, member);
+    const hasConfig = hasActivityConfig(activityName);
+    if (!hasConfig) recordUnknownActivity(guildId, activityForInbox, member);
     if (activity.type !== 0 && !hasConfig) continue;
 
     let role = null;
     let targetRoleName = null;
 
-    const premadeRoleId = getPremadeRoleId(activity.name);
+    const premadeRoleId = getPremadeRoleId(activityName);
     if (premadeRoleId) {
       const roleId = premadeRoleId;
       role = guild.roles.cache.get(roleId);
@@ -69,9 +76,9 @@ async function handlePresence(presence) {
           await sendMonitoring(`🔗 [DRY RUN] Would add role \`${role.name}\` to ${member.user.tag} (${member.id})`);
         } else {
           try {
-            await member.roles.add(role, `Started playing ${activity.name}`);
+            await member.roles.add(role, `Started playing ${activityName}`);
             console.log(`+ ${member.user.tag} → ${role.name}`);
-            await sendMonitoring(`➕ **Role added** – \`${role.name}\` assigned to ${member.user.tag} (${member.id}) for playing \`${activity.name}\``);
+            await sendMonitoring(`➕ **Role added** – \`${role.name}\` assigned to ${member.user.tag} (${member.id}) for playing \`${activityName}\``);
           } catch (err) {
             console.error(`Failed to add role to ${member.user.tag}:`, err.message);
             await sendMonitoring(`❌ Failed to add role \`${role.name}\` to ${member.user.tag}: ${err.message}`);
@@ -81,13 +88,14 @@ async function handlePresence(presence) {
     } else if (onlyUsePremadeRoles) {
       hasUnmatchedActivity = true;
       // Track time for activities the bot won't make a role for (e.g. random games
-      // when onlyUsePremadeRoles=true). Keyed by raw activity.name so panel.js's
-      // synthetic rows can look up minutes via tracker.activeElapsedMinutes.
-      tracker.observePresence(guildId, "game", activity.name, member.id);
-      currentTargetRoleNames.add(activity.name);
+      // when onlyUsePremadeRoles=true). Keyed by the Medal-stripped name so
+      // panel.js's synthetic rows can look up minutes via tracker.activeElapsedMinutes
+      // and the "with Medal" / base-name variants share one accumulator.
+      tracker.observePresence(guildId, "game", activityName, member.id);
+      currentTargetRoleNames.add(activityName);
       continue;
     } else {
-      const finalRoleName = ensurePlayingPrefix(getTargetRoleName(activity.name));
+      const finalRoleName = ensurePlayingPrefix(getTargetRoleName(activityName));
       if (protectedRoles.includes(finalRoleName)) continue;
 
       const existingRoleId = roleMap[guildId][finalRoleName];
@@ -96,7 +104,7 @@ async function handlePresence(presence) {
       if (!role) {
         if (config.dryRun) {
           console.log(`[DRY RUN] Would create role "${finalRoleName}"`);
-          await sendMonitoring(`➕ [DRY RUN] Would create role \`${finalRoleName}\` in **${guild.name}** for activity \`${activity.name}\``);
+          await sendMonitoring(`➕ [DRY RUN] Would create role \`${finalRoleName}\` in **${guild.name}** for activity \`${activityName}\``);
           continue;
         }
 
@@ -116,7 +124,7 @@ async function handlePresence(presence) {
               reason: `Auto-created for game activity`,
             });
             console.log(`Created role "${finalRoleName}"`);
-            await sendMonitoring(`➕ **Role created** – \`${created.name}\` (${created.id}) in **${guild.name}** for activity \`${activity.name}\``);
+            await sendMonitoring(`➕ **Role created** – \`${created.name}\` (${created.id}) in **${guild.name}** for activity \`${activityName}\``);
 
             const promotedCount = (promotedRoles[guildId] || []).length;
             const targetPos = Math.max(botMember.roles.highest.position - 1 - promotedCount, 0);
@@ -151,9 +159,9 @@ async function handlePresence(presence) {
           await sendMonitoring(`🔗 [DRY RUN] Would add role \`${role.name}\` to ${member.user.tag} (${member.id})`);
         } else {
           try {
-            await member.roles.add(role, `Started playing ${activity.name}`);
+            await member.roles.add(role, `Started playing ${activityName}`);
             console.log(`+ ${member.user.tag} → ${role.name}`);
-            await sendMonitoring(`➕ **Role added** – \`${role.name}\` assigned to ${member.user.tag} (${member.id}) for playing \`${activity.name}\``);
+            await sendMonitoring(`➕ **Role added** – \`${role.name}\` assigned to ${member.user.tag} (${member.id}) for playing \`${activityName}\``);
           } catch (err) {
             console.error(`Failed to add role to ${member.user.tag}:`, err.message);
             await sendMonitoring(`❌ Failed to add role \`${role.name}\` to ${member.user.tag}: ${err.message}`);

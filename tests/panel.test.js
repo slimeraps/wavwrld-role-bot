@@ -114,6 +114,140 @@ test("2. synthetic row suppressed when tracked row with same display exists (cas
   assert.equal(synth.playing.length, 0, "synthetic row should be suppressed");
 });
 
+test("2c. synthetic suppressed when tracked uses role alias and members overlap", () => {
+  // Mirrors the live "Assetto" vs "Assetto Corsa (CM)" duplicate: a role is
+  // mapped to a Discord activity but its display name is a short alias.
+  const guild = makeGuild({
+    presences: [
+      makePresence({
+        memberId: "u1",
+        displayName: "Alice",
+        activities: [makeActivity({ type: 0, name: "Assetto Corsa (CM)" })],
+      }),
+      makePresence({
+        memberId: "u2",
+        displayName: "Bob",
+        activities: [makeActivity({ type: 0, name: "Assetto Corsa (CM)" })],
+      }),
+    ],
+  });
+
+  const trackedRows = {
+    ...EMPTY_TRACKED,
+    playing: [{
+      display: "Assetto",
+      timeStr: "5h",
+      minutes: 300,
+      count: 2,
+      memberNames: ["Alice", "Bob"],
+      memberIds: ["u1", "u2"],
+      members: [{ id: "u1" }, { id: "u2" }],
+    }],
+  };
+
+  const synth = collectSyntheticRows(guild, trackedRows);
+  assert.equal(synth.playing.length, 0, "synthetic row should be suppressed via member overlap + substring");
+});
+
+test("2d. synthetic suppressed when voice channel name carries emoji prefix the role omits", () => {
+  // Mirrors the live "WAVLINK" tracked vs "🔊WAVLINK" raw channel duplicate.
+  const guild = makeGuild({
+    voiceStates: [
+      makeVoiceState({ memberId: "u1", displayName: "Alice", channelName: "🔊WAVLINK" }),
+      makeVoiceState({ memberId: "u2", displayName: "Bob", channelName: "🔊WAVLINK" }),
+    ],
+  });
+
+  const trackedRows = {
+    ...EMPTY_TRACKED,
+    voice: [{
+      display: "WAVLINK",
+      timeStr: "3h",
+      minutes: 180,
+      count: 2,
+      memberNames: ["Alice", "Bob"],
+      memberIds: ["u1", "u2"],
+      members: [{ id: "u1" }, { id: "u2" }],
+    }],
+  };
+
+  const synth = collectSyntheticRows(guild, trackedRows);
+  assert.equal(synth.voice.length, 0, "voice synthetic should be suppressed");
+});
+
+test("2e. medal-suffix activity folds into the base game's bucket display", () => {
+  // Bare "Rust with Medal" presence with no tracked row: the synthetic
+  // bucket display should be stripped to "Rust".
+  const guild = makeGuild({
+    presences: [
+      makePresence({
+        memberId: "u1",
+        displayName: "Chayse",
+        activities: [makeActivity({ type: 0, name: "Rust with Medal" })],
+      }),
+    ],
+  });
+
+  const synth = collectSyntheticRows(guild, EMPTY_TRACKED);
+  assert.equal(synth.playing.length, 1);
+  assert.equal(synth.playing[0].display, "Rust", "Medal suffix should be stripped from the display");
+});
+
+test("2f. medal-suffix and base-name presences collapse into one bucket", () => {
+  // Two members in different Medal states reporting the same game: one
+  // bucket with both members, not two rows.
+  const guild = makeGuild({
+    presences: [
+      makePresence({
+        memberId: "u1",
+        displayName: "Alice",
+        activities: [makeActivity({ type: 0, name: "MECCHA CHAMELEON" })],
+      }),
+      makePresence({
+        memberId: "u2",
+        displayName: "Bob",
+        activities: [makeActivity({ type: 0, name: "MECCHA CHAMELEON with Medal" })],
+      }),
+    ],
+  });
+
+  const synth = collectSyntheticRows(guild, EMPTY_TRACKED);
+  assert.equal(synth.playing.length, 1, "Medal-on and Medal-off variants should merge");
+  assert.equal(synth.playing[0].display, "MECCHA CHAMELEON");
+  assert.equal(synth.playing[0].count, 2);
+});
+
+test("2g. unrelated synthetic NOT suppressed just because a shared player is in a tracked row", () => {
+  // Alice has a tracked "Rust" role and is also showing presence for an
+  // unrelated game "Fortnite". The unrelated game must still appear.
+  const guild = makeGuild({
+    presences: [
+      makePresence({
+        memberId: "u1",
+        displayName: "Alice",
+        activities: [makeActivity({ type: 0, name: "Fortnite" })],
+      }),
+    ],
+  });
+
+  const trackedRows = {
+    ...EMPTY_TRACKED,
+    playing: [{
+      display: "Rust",
+      timeStr: "2h",
+      minutes: 120,
+      count: 2,
+      memberNames: ["Alice", "Bob"],
+      memberIds: ["u1", "u2"],
+      members: [{ id: "u1" }, { id: "u2" }],
+    }],
+  };
+
+  const synth = collectSyntheticRows(guild, trackedRows);
+  assert.equal(synth.playing.length, 1, "Fortnite synthetic should still appear");
+  assert.equal(synth.playing[0].display, "Fortnite");
+});
+
 test("2b. suppression is per-section: same display in different section is NOT suppressed", () => {
   const guild = makeGuild({
     presences: [
