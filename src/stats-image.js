@@ -720,7 +720,8 @@ async function renderLiveActivity({ guildName, totalActive, sections }) {
       // blank. We reuse drawProgressRow's icon + name + label + time columns.
       drawProgressRow(ctx, PAD, rowY, innerW, ROW_H, {
         rank: "",
-        icon: row.icon,
+        avatars: row.avatars || [],
+        extraCount: row.extraCount || 0,
         name: row.display,
         gameLabel: memberLabel,
         hoursLabel: row.timeStr,
