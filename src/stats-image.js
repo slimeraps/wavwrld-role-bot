@@ -287,24 +287,23 @@ function drawPodCard(ctx, x, y, w, h, opts) {
   ctx.fillText(opts.hoursLabel, cx, cy);
 }
 
-// Render one row of the 4-10 list with a pink-ghost progress bar background.
-// All coordinates and sizes are already scaled by the caller.
+// Render one row with a leading stack of user-profile-picture circles.
 //
 // opts:
-//   rank:        number (4..10)
-//   icon:        loaded Image | null
+//   rank:        number | string (use "" for unranked Live Activity rows)
+//   avatars:     loaded Image[] (up to 3, may be empty)
+//   extraCount:  integer, draws "+N" chip after the stack when > 0
 //   name:        string
-//   gameLabel:   string (e.g. "League of Legends · 12h") or null
-//   hoursLabel:  string (e.g. "19h")
-//   barPct:      0..1, width of the ghost progress bar relative to row width
+//   gameLabel:   string or null (members list for live activity, game label for stats)
+//   hoursLabel:  string
+//   barPct:      0..1, ghost progress bar width
+//   timeColor:   color override for the hours label (defaults to PALETTE.blue)
 function drawProgressRow(ctx, x, y, w, h, opts) {
-  // Clip to row rect so the bar can't escape (it shouldn't anyway, defensive).
   ctx.save();
   ctx.beginPath();
   ctx.rect(x, y, w, h);
   ctx.clip();
 
-  // Progress bar (background fill, left-aligned).
   if (opts.barPct > 0) {
     ctx.fillStyle = PALETTE.pinkGhost;
     ctx.fillRect(x, y, w * Math.min(1, opts.barPct), h);
@@ -314,30 +313,61 @@ function drawProgressRow(ctx, x, y, w, h, opts) {
   const cy = y + h / 2;
   ctx.textBaseline = "middle";
 
-  // Rank number — small, dim, fixed-width gutter.
+  // Rank gutter — kept blank for unranked rows but the gutter still consumes space.
   const rankGutter = 28 * SCALE;
-  ctx.textAlign = "center";
-  ctx.font = `bold ${13 * SCALE}px UI Bold`;
-  ctx.fillStyle = PALETTE.usersDim;
-  ctx.fillText(String(opts.rank), x + innerPad + rankGutter / 2, cy);
+  if (opts.rank !== "" && opts.rank != null) {
+    ctx.textAlign = "center";
+    ctx.font = `bold ${13 * SCALE}px UI Bold`;
+    ctx.fillStyle = PALETTE.usersDim;
+    ctx.fillText(String(opts.rank), x + innerPad + rankGutter / 2, cy);
+  }
 
-  // Role icon (round-clipped), 24px logical.
+  // Avatar stack.
   const iconSize = 24 * SCALE;
-  const iconX = x + innerPad + rankGutter + 10 * SCALE;
-  const iconY = cy - iconSize / 2;
-  if (opts.icon) {
-    ctx.save();
+  const stackStep = 14 * SCALE; // horizontal offset between stacked disks
+  const stackStartX = x + innerPad + rankGutter + 10 * SCALE;
+  const avatars = Array.isArray(opts.avatars) ? opts.avatars : [];
+
+  if (avatars.length === 0) {
+    // Placeholder filled circle so the row geometry doesn't collapse.
     ctx.beginPath();
-    ctx.arc(iconX + iconSize / 2, iconY + iconSize / 2, iconSize / 2, 0, Math.PI * 2);
-    ctx.closePath();
-    ctx.clip();
-    ctx.drawImage(opts.icon, iconX, iconY, iconSize, iconSize);
-    ctx.restore();
-  } else {
-    ctx.beginPath();
-    ctx.arc(iconX + iconSize / 2, iconY + iconSize / 2, iconSize / 2, 0, Math.PI * 2);
+    ctx.arc(stackStartX + iconSize / 2, cy, iconSize / 2, 0, Math.PI * 2);
     ctx.fillStyle = PALETTE.usersBorder;
     ctx.fill();
+  } else {
+    for (let i = 0; i < avatars.length; i += 1) {
+      const ax = stackStartX + stackStep * i;
+      const ay = cy - iconSize / 2;
+      // Background ring for visual separation between stacked disks.
+      ctx.beginPath();
+      ctx.arc(ax + iconSize / 2, ay + iconSize / 2, iconSize / 2 + 1.5 * SCALE, 0, Math.PI * 2);
+      ctx.fillStyle = PALETTE.usersPanel;
+      ctx.fill();
+      // Round-clip and draw the avatar.
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(ax + iconSize / 2, ay + iconSize / 2, iconSize / 2, 0, Math.PI * 2);
+      ctx.closePath();
+      ctx.clip();
+      ctx.drawImage(avatars[i], ax, ay, iconSize, iconSize);
+      ctx.restore();
+    }
+  }
+
+  const stackUsed = avatars.length === 0
+    ? iconSize
+    : iconSize + stackStep * (avatars.length - 1);
+  let cursorX = stackStartX + stackUsed + 10 * SCALE;
+
+  // "+N" overflow chip.
+  if (opts.extraCount > 0) {
+    const chipFont = `bold ${11 * SCALE}px UI Bold`;
+    ctx.font = chipFont;
+    ctx.textAlign = "left";
+    ctx.fillStyle = PALETTE.usersDim;
+    const chipText = `+${opts.extraCount}`;
+    ctx.fillText(chipText, cursorX, cy);
+    cursorX += ctx.measureText(chipText).width + 8 * SCALE;
   }
 
   // Layout for name + game + hours.
@@ -348,21 +378,17 @@ function drawProgressRow(ctx, x, y, w, h, opts) {
   const hoursRightX = x + w - innerPad;
   const hoursLeftX = hoursRightX - hoursWidth;
 
-  // Hours (right-aligned). Caller picks the color (blue by default, green for voice).
   ctx.textAlign = "right";
   ctx.fillStyle = opts.timeColor || PALETTE.blue;
   ctx.fillText(hoursLabel, hoursRightX, cy);
 
-  // Available horizontal range for name + game.
-  const textStartX = iconX + iconSize + 10 * SCALE;
+  const textStartX = cursorX;
   const textEndX = hoursLeftX - 12 * SCALE;
-  const textRange = textEndX - textStartX;
+  const textRange = Math.max(0, textEndX - textStartX);
 
-  // Name takes the left ~45% of the available range; game takes the right ~55%.
-  const nameMax = Math.max(0, textRange * 0.45);
+  const nameMax = textRange * 0.45;
   const gameMax = Math.max(0, textRange * 0.55 - 8 * SCALE);
 
-  // Name (left).
   ctx.textAlign = "left";
   const nameFont = `bold ${14 * SCALE}px UI Bold`;
   const nameText = truncate(ctx, opts.name, nameMax, nameFont);
@@ -370,7 +396,6 @@ function drawProgressRow(ctx, x, y, w, h, opts) {
   ctx.fillStyle = PALETTE.usersText;
   ctx.fillText(nameText, textStartX, cy);
 
-  // Game label (left-aligned, starts after the name's max gutter).
   if (opts.gameLabel) {
     const gameFont = `${12 * SCALE}px UI`;
     const gameStart = textStartX + nameMax + 8 * SCALE;
@@ -848,4 +873,5 @@ module.exports = {
   renderVoice30d,
   renderPlaying,
   loadUserAvatarCached,
+  __drawProgressRow: drawProgressRow,
 };
