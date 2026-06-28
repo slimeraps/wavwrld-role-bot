@@ -873,4 +873,5 @@ module.exports = {
   renderPlaying,
   loadUserAvatarCached,
   __drawProgressRow: drawProgressRow,
+  __userAvatarCache: userAvatarCache,
 };

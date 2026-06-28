@@ -91,3 +91,48 @@ test("collectRows sets sinceTs to null for voice rows", () => {
   assert.equal(rows.voice.length, 1);
   assert.equal(rows.voice[0].members[0].sinceTs, null);
 });
+
+const { buildLiveActivitySnapshot } = require("../src/stats-channel");
+
+test("buildLiveActivitySnapshot attaches avatars and extraCount per row", async () => {
+  const guildId = "g2";
+  const members = [
+    makeMember({ id: "u1", displayName: "Alice" }),
+    makeMember({ id: "u2", displayName: "Bob" }),
+    makeMember({ id: "u3", displayName: "Carol" }),
+    makeMember({ id: "u4", displayName: "Dan" }),
+  ];
+  const role = makeRole({ id: "r1", name: "Playing Rust", members });
+  const roles = new Map([["r1", role]]);
+  roleMap[guildId] = { "Playing Rust": "r1" };
+
+  // Extend the stub guild with members.cache so loadUserAvatarCached can
+  // look users up. Each stub member returns a stable per-user fake URL from
+  // displayAvatarURL; we prime the avatar cache for those URLs with a fake
+  // image so the loader resolves synchronously without touching the network.
+  const stats = require("../src/stats-image");
+  const fakeImage = { _fake: true };
+  const memberCache = new Map(members.map((m) => [m.id, {
+    ...m,
+    displayAvatarURL: () => `fake://avatar/${m.id}`,
+  }]));
+  for (const m of members) {
+    stats.__userAvatarCache.set(`fake://avatar/${m.id}`, fakeImage);
+  }
+  const guild = {
+    id: guildId,
+    name: "G2",
+    roles: { cache: { get: (id) => roles.get(id) || undefined } },
+    members: { cache: { get: (id) => memberCache.get(id) || undefined } },
+    presences: { cache: { values: () => [].values() } },
+    voiceStates: { cache: { values: () => [].values() } },
+  };
+
+  const snapshot = await buildLiveActivitySnapshot(guild);
+  const playingSection = snapshot.sections.find((s) => s.key === "playing");
+  assert.ok(playingSection, "playing section present");
+  const row = playingSection.rows[0];
+  assert.ok(Array.isArray(row.avatars), "row.avatars is an array");
+  assert.equal(row.avatars.length, 3, "stack capped at 3");
+  assert.equal(row.extraCount, 1, "extraCount = total - 3");
+});
