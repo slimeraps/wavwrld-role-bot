@@ -428,18 +428,16 @@ function drawSectionHeader(ctx, x, y, w, { title, subtitle, accent }) {
   ctx.stroke();
 }
 
-async function renderUsersDefault({ guildName, title, totals, members, roleByGameKey }) {
+async function renderUsersDefault({ guildName, title, totals, members, guild }) {
   const memberRows = members.slice(0, 10);
   const podiumRows = memberRows.slice(0, 3);
   const listRows = memberRows.slice(3);
 
-  // Resolve + load all role icons in parallel before drawing.
-  const resolved = await Promise.all(memberRows.map(async (r) => {
-    if (!r.topGame) return { row: r, icon: null };
-    const role = roleByGameKey?.(r.topGame.key) || null;
-    const icon = await loadRoleIconCached(role);
-    return { row: r, icon };
-  }));
+  // Resolve user avatars in parallel before drawing.
+  const resolved = await Promise.all(memberRows.map(async (r) => ({
+    row: r,
+    icon: await loadUserAvatarCached(guild, r.userId),
+  })));
 
   // Layout (all values 1x-logical; multiply by SCALE before drawing).
   const W = 960 * SCALE;
@@ -574,7 +572,8 @@ async function renderUsersDefault({ guildName, title, totals, members, roleByGam
       const barPct = topVoice > 0 ? row.voiceMinutes / topVoice : 0;
       drawProgressRow(ctx, PAD, rowY, innerW, ROW_H, {
         rank: i + 4,
-        icon,
+        avatars: icon ? [icon] : [],
+        extraCount: 0,
         name: row.displayName,
         gameLabel,
         hoursLabel: fmtTime(row.voiceMinutes),

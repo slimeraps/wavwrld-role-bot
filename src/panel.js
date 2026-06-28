@@ -1,7 +1,7 @@
 const http = require("http");
 const crypto = require("crypto");
 const { collectRows, collectSyntheticRows, buildLiveActivitySnapshot } = require("./stats-channel");
-const { buildUserMembers, buildStatsTotals, roleForGameKey } = require("./stats");
+const { buildUserMembers, buildStatsTotals } = require("./stats");
 const { renderUsersDefault, renderLiveActivity } = require("./stats-image");
 const { config } = require("./config");
 
@@ -68,7 +68,6 @@ async function renderStatsImage(client, guildId) {
     totals,
     members,
     guild,
-    roleByGameKey: (key) => roleForGameKey(guild, key),
   });
   const entry = { buffer, mime: "image/jpeg", generatedAt: Date.now() };
   statsImageCache.set(guildId, entry);
