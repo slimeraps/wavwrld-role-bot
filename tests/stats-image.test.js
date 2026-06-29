@@ -84,3 +84,27 @@ test("drawProgressRow draws +N chip when extraCount > 0", () => {
   const texts = calls.filter((c) => c[0] === "fillText").map((c) => c[1]);
   assert.ok(texts.includes("+2"), `expected "+2" chip in fillText calls, got ${JSON.stringify(texts)}`);
 });
+
+test("selectLeader returns null for empty input", () => {
+  assert.equal(stats.__selectLeader([]), null);
+  assert.equal(stats.__selectLeader(null), null);
+  assert.equal(stats.__selectLeader(undefined), null);
+});
+
+test("selectLeader returns the single section when only one", () => {
+  const only = { key: "playing", memberCount: 2 };
+  assert.equal(stats.__selectLeader([only]), only);
+});
+
+test("selectLeader picks the section with the highest memberCount", () => {
+  const a = { key: "playing",   memberCount: 3 };
+  const b = { key: "voice",     memberCount: 8 };
+  const c = { key: "listening", memberCount: 1 };
+  assert.equal(stats.__selectLeader([a, b, c]), b);
+});
+
+test("selectLeader ties break to the earliest section in input order", () => {
+  const a = { key: "playing", memberCount: 4 };
+  const b = { key: "voice",   memberCount: 4 };
+  assert.equal(stats.__selectLeader([a, b]), a);
+});

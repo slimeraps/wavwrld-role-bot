@@ -432,6 +432,18 @@ function drawSectionHeader(ctx, x, y, w, { title, subtitle, accent }) {
   ctx.stroke();
 }
 
+// Picks the section with the highest memberCount. Ties resolve to the
+// section that appears first in `sections` (which is LIVE_SECTIONS order
+// because buildLiveActivitySnapshot iterates that array).
+function selectLeader(sections) {
+  if (!Array.isArray(sections) || sections.length === 0) return null;
+  let leader = sections[0];
+  for (const s of sections) {
+    if (s.memberCount > leader.memberCount) leader = s;
+  }
+  return leader;
+}
+
 async function renderUsersDefault({ guildName, title, totals, members, guild }) {
   const memberRows = members.slice(0, 10);
   const podiumRows = memberRows.slice(0, 3);
@@ -879,4 +891,5 @@ module.exports = {
   loadUserAvatarCached,
   __drawProgressRow: drawProgressRow,
   __userAvatarCache: userAvatarCache,
+  __selectLeader: selectLeader,
 };
