@@ -136,6 +136,75 @@ function drawPanel(ctx, x, y, w, h, fill = PALETTE.panel2) {
   ctx.fill();
 }
 
+// Tile background + subtle inset top highlight. Caller passes already-scaled
+// coords. fill defaults to PALETTE.tileBg.
+function drawTileChrome(ctx, x, y, w, h, fill = PALETTE.tileBg) {
+  ctx.fillStyle = fill;
+  roundRect(ctx, x, y, w, h, RADIUS * SCALE);
+  ctx.fill();
+  ctx.fillStyle = PALETTE.tileHighlight;
+  ctx.fillRect(x + RADIUS * SCALE, y, w - RADIUS * 2 * SCALE, 1 * SCALE);
+}
+
+// Thin progress bar across the bottom inner edge of a tile. value is 0..1.
+function drawTileBar(ctx, x, y, w, h, value, color) {
+  if (!(value > 0)) return;
+  const pad = 14 * SCALE;
+  const barY = y + h - 3 * SCALE;
+  const barW = (w - pad * 2) * Math.min(1, value);
+  ctx.fillStyle = color;
+  ctx.fillRect(x + pad, barY, barW, 3 * SCALE);
+}
+
+// Avatar cluster: overlapping circular avatars left-to-right with a ring
+// around each, optional "+N" chip after the stack. Returns the right edge
+// x (so callers can place follow-on text).
+//
+// opts:
+//   avatars:    Image[] (already loaded; never null inside the array)
+//   extraCount: integer
+//   size:       circle diameter (already scaled)
+//   step:       horizontal offset between disks (already scaled)
+//   ringColor:  color of the per-avatar background ring (already scaled stroke)
+function drawAvatarCluster(ctx, x, cy, opts) {
+  const { avatars, extraCount, size, step, ringColor } = opts;
+  const ringPad = 1.5 * SCALE;
+  if (avatars.length === 0) {
+    ctx.beginPath();
+    ctx.arc(x + size / 2, cy, size / 2, 0, Math.PI * 2);
+    ctx.fillStyle = PALETTE.usersBorder;
+    ctx.fill();
+  }
+  for (let i = 0; i < avatars.length; i += 1) {
+    const cx = x + size / 2 + step * i;
+    // Background ring.
+    ctx.beginPath();
+    ctx.arc(cx, cy, size / 2 + ringPad, 0, Math.PI * 2);
+    ctx.fillStyle = ringColor;
+    ctx.fill();
+    // Round-clipped image.
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, size / 2, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.clip();
+    ctx.drawImage(avatars[i], cx - size / 2, cy - size / 2, size, size);
+    ctx.restore();
+  }
+  let rightX = x + size + (Math.max(0, avatars.length - 1) * step);
+  if (extraCount > 0) {
+    const chipFont = `bold ${11 * SCALE}px UI Bold`;
+    ctx.font = chipFont;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = PALETTE.usersDim;
+    const chipText = `+${extraCount}`;
+    ctx.fillText(chipText, rightX + 8 * SCALE, cy);
+    rightX += 8 * SCALE + ctx.measureText(chipText).width;
+  }
+  return rightX;
+}
+
 function drawText(ctx, text, x, y, opts = {}) {
   ctx.fillStyle = opts.color || PALETTE.text;
   ctx.font = `${opts.weight || ""} ${opts.size || 14}px ${opts.weight === "bold" ? "UI Bold" : "UI"}`;
