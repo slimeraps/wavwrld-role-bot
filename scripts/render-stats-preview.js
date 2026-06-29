@@ -1,8 +1,8 @@
 // Dev-only: render the !stats image with synthetic data and write to ./preview.jpg.
 // Usage: node scripts/render-stats-preview.js
 //
-// roleByGameKey is stubbed to () => null so no Discord CDN role-icon fetches happen.
-// The rendered image therefore has no role icons — verify layout/palette/text only.
+// guild is null, so loadUserAvatarCached short-circuits to null for every row.
+// The rendered image therefore has no user avatars — verify layout/palette/text only.
 
 const fs = require("fs");
 const path = require("path");
@@ -38,7 +38,6 @@ const totals = {
     totals,
     members,
     guild: null,
-    roleByGameKey: () => null,
   });
   const out = path.resolve(__dirname, "..", "preview.jpg");
   fs.writeFileSync(out, buffer);
