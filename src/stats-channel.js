@@ -3,7 +3,7 @@ const { stripTimerPrefix, formatTimerMinutes, sleep, stripMedalSuffix } = requir
 const { sendMonitoring } = require("./monitoring");
 const { roleMap, voiceChannelRoles, statsEmbeds, statsImageEmbeds, saveData } = require("./state");
 const tracker = require("./tracker");
-const { LIVE_SECTIONS } = require("./stats-image");
+const { LIVE_SECTIONS, loadUserAvatarCached } = require("./stats-image");
 const { liveImageUrl, statsImageUrl } = require("./stats");
 
 const STATS_CHANNEL_ID = process.env.STATS_CHANNEL_ID || config.statsChannelId || "";
@@ -370,32 +370,9 @@ async function migrateStaleTimerPrefixes(client) {
   }
 }
 
-// Re-export of the @napi-rs/canvas image loader. We use it to pre-resolve role
-// icons before handing the snapshot to renderLiveActivity. Per-process icon
-// cache keyed by Discord role.icon hash; invalidates on icon change.
-const { loadImage } = require("@napi-rs/canvas");
-
-const liveIconCache = new Map(); // role.icon hash -> Image | null
-
-async function loadRoleIcon(role) {
-  if (!role || !role.icon) return null;
-  const key = role.icon;
-  if (liveIconCache.has(key)) return liveIconCache.get(key);
-  const url = role.iconURL({ size: 64, extension: "png" });
-  if (!url) return null;
-  try {
-    const img = await loadImage(url);
-    liveIconCache.set(key, img);
-    return img;
-  } catch (err) {
-    console.warn(`[live] could not load role icon for "${role.name}": ${err.message}`);
-    liveIconCache.set(key, null);
-    return null;
-  }
-}
-
-// Builds the input shape that renderLiveActivity expects. Resolves role icons
-// in parallel before returning. Called by the panel's /live/<id>.jpg route.
+// Builds the input shape that renderLiveActivity expects. Resolves member
+// avatars in parallel before returning. Called by the panel's /live/<id>.jpg
+// route.
 async function buildLiveActivitySnapshot(guild) {
   const rows = collectRows(guild);
   const syntheticRows = collectSyntheticRows(guild, rows);
@@ -408,20 +385,32 @@ async function buildLiveActivitySnapshot(guild) {
     const synthetic = syntheticRows[meta.key] || [];
     if (tracked.length === 0 && synthetic.length === 0) continue;
 
-    // Pre-resolve icons in parallel for tracked rows; synthetic rows have no
-    // role so their icon is null (the renderer draws a filled circle placeholder).
-    const trackedWithIcons = await Promise.all(tracked.map(async (r) => {
-      const role = r.roleId ? guild.roles.cache.get(r.roleId) : null;
-      const icon = await loadRoleIcon(role);
-      return { ...r, icon };
+    // Pre-resolve the first 3 member avatars per row in parallel. The renderer
+    // draws a placeholder circle for any avatar that fails to load (null) and
+    // a "+N" chip when extraCount > 0.
+    const trackedWithAvatars = await Promise.all(tracked.map(async (r) => {
+      const stackMembers = (r.members || []).slice(0, 3);
+      const avatars = (await Promise.all(
+        stackMembers.map((m) => loadUserAvatarCached(guild, m.id)),
+      )).filter((img) => img != null);
+      const extraCount = Math.max(0, (r.members?.length || 0) - 3);
+      return { ...r, avatars, extraCount };
     }));
-    const syntheticWithShape = synthetic.map((r) => ({
-      ...r,
-      icon: null,
-      memberIds: (r.members || []).map((m) => m.id),
+    const syntheticWithShape = await Promise.all(synthetic.map(async (r) => {
+      const stackMembers = (r.members || []).slice(0, 3);
+      const avatars = (await Promise.all(
+        stackMembers.map((m) => loadUserAvatarCached(guild, m.id)),
+      )).filter((img) => img != null);
+      const extraCount = Math.max(0, (r.members?.length || 0) - 3);
+      return {
+        ...r,
+        avatars,
+        extraCount,
+        memberIds: (r.members || []).map((m) => m.id),
+      };
     }));
 
-    const merged = [...trackedWithIcons, ...syntheticWithShape].sort(
+    const merged = [...trackedWithAvatars, ...syntheticWithShape].sort(
       (a, b) => b.minutes - a.minutes || a.display.localeCompare(b.display),
     );
 
