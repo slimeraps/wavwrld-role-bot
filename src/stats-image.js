@@ -821,6 +821,83 @@ function drawHeroTile(ctx, x, y, w, h, opts) {
   drawTileBar(ctx, x, y, w, h, barValue, accent);
 }
 
+function drawMemberHeroTile(ctx, x, y, w, h, row, avatar) {
+  drawTileChrome(ctx, x, y, w, h, PALETTE.tileBg);
+
+  // Left-edge gold accent bar.
+  ctx.fillStyle = PALETTE.gold;
+  roundRect(ctx, x, y + 14 * SCALE, 3 * SCALE, h - 28 * SCALE, 2 * SCALE);
+  ctx.fill();
+
+  const innerX = x + 20 * SCALE;
+  const innerW = w - 40 * SCALE;
+
+  // Rank label.
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+  ctx.font = `bold ${11 * SCALE}px UI Bold`;
+  ctx.fillStyle = PALETTE.gold;
+  ctx.fillText("🏆 1ST · GOLD", innerX, y + 26 * SCALE);
+
+  // Avatar + name + game stack.
+  const avSize = 64 * SCALE;
+  const avCx = innerX + avSize / 2;
+  const avCy = y + 70 * SCALE;
+  if (avatar) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(avCx, avCy, avSize / 2, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.clip();
+    ctx.drawImage(avatar, avCx - avSize / 2, avCy - avSize / 2, avSize, avSize);
+    ctx.restore();
+  } else {
+    ctx.beginPath();
+    ctx.arc(avCx, avCy, avSize / 2, 0, Math.PI * 2);
+    ctx.fillStyle = PALETTE.usersBorder;
+    ctx.fill();
+  }
+
+  const textX = innerX + avSize + 16 * SCALE;
+  const textW = innerW - avSize - 16 * SCALE;
+
+  // Name (22px) and game name (22px to match).
+  const lineFont = `bold ${22 * SCALE}px UI Bold`;
+  ctx.font = lineFont;
+  ctx.fillStyle = PALETTE.usersText;
+  const nameText = truncate(ctx, row.displayName, textW, lineFont);
+  ctx.fillText(nameText, textX, y + 60 * SCALE);
+
+  const gameLabel = row.topGame
+    ? `${row.topGame.key} · ${fmtTime(row.topGame.minutes)}`
+    : "—";
+  const gameText = truncate(ctx, gameLabel, textW, lineFont);
+  ctx.fillText(gameText, textX, y + 90 * SCALE);
+
+  // Divider.
+  const divY = y + 120 * SCALE;
+  ctx.strokeStyle = "rgba(255,255,255,0.06)";
+  ctx.lineWidth = 1 * SCALE;
+  ctx.beginPath();
+  ctx.moveTo(innerX, divY);
+  ctx.lineTo(innerX + innerW, divY);
+  ctx.stroke();
+
+  // VOICE · 30D label centered.
+  ctx.textAlign = "center";
+  ctx.font = `bold ${10 * SCALE}px UI Bold`;
+  ctx.fillStyle = PALETTE.usersMuted;
+  ctx.fillText("VOICE · 30D", innerX + innerW / 2, divY + 28 * SCALE);
+
+  // Big time.
+  ctx.font = `bold ${32 * SCALE}px UI Bold`;
+  ctx.fillStyle = PALETTE.pink;
+  ctx.fillText(fmtTime(row.voiceMinutes), innerX + innerW / 2, divY + 68 * SCALE);
+
+  // Bottom bar (always full).
+  drawTileBar(ctx, x, y, w, h, 1, PALETTE.pink);
+}
+
 function drawSmallTile(ctx, x, y, w, h, opts) {
   const isVoice = opts.section.key === "voice";
   const tileBg = isVoice ? PALETTE.tileBgVoice : PALETTE.tileBg;
@@ -1127,4 +1204,5 @@ module.exports = {
   __computeBentoGrid: computeBentoGrid,
   __drawHeroTile: drawHeroTile,
   __drawSmallTile: drawSmallTile,
+  __drawMemberHeroTile: drawMemberHeroTile,
 };

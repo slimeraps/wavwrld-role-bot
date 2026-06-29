@@ -211,3 +211,18 @@ test("drawSmallTile uses voice tile background and green time for voice", () => 
   assert.ok(fills.includes("rgba(28,60,40,0.62)"), "voice tile bg");
   assert.ok(fills.includes("#b8e3a1"), "green time color");
 });
+
+test("drawMemberHeroTile draws rank, name, game line, and big voice time", () => {
+  const { ctx, calls } = makeStubCtx();
+  // 47 * 60 = 2820 min = 1d 23h per fmtTime; check for the hours portion "23h".
+  stats.__drawMemberHeroTile(ctx, 0, 0, 400, 232, {
+    displayName: "Helms",
+    voiceMinutes: 47 * 60,
+    topGame: { key: "Counter-Strike 2", minutes: 38 * 60 },
+  }, fakeImage2);
+  const texts = calls.filter((c) => c[0] === "fillText").map((c) => c[1]);
+  assert.ok(texts.some((t) => t.includes("1ST")), `expected rank text, got ${JSON.stringify(texts)}`);
+  assert.ok(texts.includes("Helms"));
+  assert.ok(texts.some((t) => t.includes("Counter-Strike 2")));
+  assert.ok(texts.some((t) => t.includes("1d")), `expected day-formatted voice time, got ${JSON.stringify(texts)}`);
+});
