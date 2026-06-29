@@ -558,52 +558,75 @@ function computeBentoGrid(w, h, gap, smallCount) {
 
 async function renderUsersDefault({ guildName, title, totals, members, guild }) {
   const memberRows = members.slice(0, 10);
-  const podiumRows = memberRows.slice(0, 3);
-  const listRows = memberRows.slice(3);
+  const hero = memberRows[0] || null;
+  const podium = memberRows.slice(1, 3); // #2, #3
+  const ladder = memberRows.slice(3);    // #4 onwards
 
-  // Resolve user avatars in parallel before drawing.
+  // Resolve avatars in parallel.
   const resolved = await Promise.all(memberRows.map(async (r) => ({
     row: r,
-    icon: await loadUserAvatarCached(guild, r.userId),
+    avatar: await loadUserAvatarCached(guild, r.userId),
   })));
 
-  // Layout (all values 1x-logical; multiply by SCALE before drawing).
+  // Layout (1× logical pixels).
   const W = 960 * SCALE;
   const PAD = 20 * SCALE;
   const HEADER_H = 72 * SCALE;
-  const SEC_GAP = 14 * SCALE;
-  const POD_GAP = 12 * SCALE;
-  const POD_SIDE_H = 232 * SCALE;
-  const POD_CENTER_H = 256 * SCALE;
-  const LIST_PAD_TOP = 12 * SCALE;
-  const LIST_HEADER_H = 30 * SCALE;
-  const ROW_H = 36 * SCALE;
+  const GAP = 10 * SCALE;
+  const HERO_H = 232 * SCALE;
+  const LADDER_ROW_H = 32 * SCALE;
+  const LADDER_PAD_Y = 6 * SCALE;
+  const EMPTY_PANEL_H = 80 * SCALE;
 
-  const listH = listRows.length > 0
-    ? LIST_PAD_TOP + LIST_HEADER_H + ROW_H * listRows.length + LIST_PAD_TOP
+  if (!hero) {
+    const height = PAD + HEADER_H + GAP + EMPTY_PANEL_H + PAD;
+    const canvas = createCanvas(W, height);
+    const ctx = canvas.getContext("2d");
+    drawCanvasBackground(ctx, W, height);
+    // Header (no ACTIVE count).
+    let y = PAD;
+    ctx.fillStyle = PALETTE.usersPanel;
+    roundRect(ctx, PAD, y, W - PAD * 2, HEADER_H, RADIUS * SCALE);
+    ctx.fill();
+    ctx.fillStyle = PALETTE.pink;
+    roundRect(ctx, PAD, y, 4 * SCALE, HEADER_H, 2 * SCALE);
+    ctx.fill();
+    drawText(ctx, title || "Top Members — Last 30 Days",
+      PAD + 24 * SCALE, y + 30 * SCALE,
+      { size: 19 * SCALE, weight: "bold", color: PALETTE.usersText });
+    drawText(ctx, guildName || "",
+      PAD + 24 * SCALE, y + 52 * SCALE,
+      { size: 12 * SCALE, color: PALETTE.usersMuted });
+    y += HEADER_H + GAP;
+    ctx.fillStyle = PALETTE.usersPanel;
+    roundRect(ctx, PAD, y, W - PAD * 2, EMPTY_PANEL_H, RADIUS * SCALE);
+    ctx.fill();
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = `${14 * SCALE}px UI`;
+    ctx.fillStyle = PALETTE.usersDim;
+    ctx.fillText("No tracked activity yet.", W / 2, y + EMPTY_PANEL_H / 2);
+    return canvas.toBuffer("image/jpeg");
+  }
+
+  const ladderH = ladder.length > 0
+    ? LADDER_PAD_Y * 2 + LADDER_ROW_H * ladder.length
     : 0;
-  const podH = podiumRows.length > 0 ? POD_CENTER_H : 0;
-  const height = PAD
-    + HEADER_H
-    + (podH > 0 ? SEC_GAP + podH : 0)
-    + (listH > 0 ? SEC_GAP + listH : 0)
-    + PAD;
+  const height = PAD + HEADER_H + GAP + HERO_H
+    + (ladderH > 0 ? GAP + ladderH : 0) + PAD;
 
   const canvas = createCanvas(W, height);
   const ctx = canvas.getContext("2d");
   drawCanvasBackground(ctx, W, height);
 
-  // ── Header ────────────────────────────────────────────────────────────
+  // ── Header (unchanged structurally) ───────────────────────────────────
   let y = PAD;
   ctx.fillStyle = PALETTE.usersPanel;
   roundRect(ctx, PAD, y, W - PAD * 2, HEADER_H, RADIUS * SCALE);
   ctx.fill();
-  // Pink accent bar on the left edge of the header panel.
   ctx.fillStyle = PALETTE.pink;
   roundRect(ctx, PAD, y, 4 * SCALE, HEADER_H, 2 * SCALE);
   ctx.fill();
-
-  // Title + sub on the left.
   drawText(ctx, title || "Top Members — Last 30 Days",
     PAD + 24 * SCALE, y + 30 * SCALE,
     { size: 19 * SCALE, weight: "bold", color: PALETTE.usersText });
@@ -611,16 +634,14 @@ async function renderUsersDefault({ guildName, title, totals, members, guild }) 
     PAD + 24 * SCALE, y + 52 * SCALE,
     { size: 12 * SCALE, color: PALETTE.usersMuted });
 
-  // ACTIVE badge on the right.
   const activeRightX = W - PAD - 18 * SCALE;
-  const dividerX = activeRightX - 80 * SCALE; // small gutter for the divider
+  const dividerX = activeRightX - 80 * SCALE;
   ctx.strokeStyle = PALETTE.usersBorder;
   ctx.lineWidth = 1 * SCALE;
   ctx.beginPath();
   ctx.moveTo(dividerX, y + 18 * SCALE);
   ctx.lineTo(dividerX, y + HEADER_H - 18 * SCALE);
   ctx.stroke();
-
   ctx.textAlign = "right";
   ctx.textBaseline = "alphabetic";
   ctx.font = `bold ${10 * SCALE}px UI Bold`;
@@ -629,84 +650,58 @@ async function renderUsersDefault({ guildName, title, totals, members, guild }) 
   ctx.font = `bold ${26 * SCALE}px UI Bold`;
   ctx.fillStyle = PALETTE.pink;
   ctx.fillText(String(totals?.activeMembers ?? 0), activeRightX, y + 58 * SCALE);
-
   y += HEADER_H;
 
-  // ── Podium ────────────────────────────────────────────────────────────
-  if (podiumRows.length > 0) {
-    y += SEC_GAP;
-    const podRow = y;
-    const innerW = W - PAD * 2;
-    const cardW = Math.floor((innerW - POD_GAP * 2) / 3);
+  // ── Hero + podium grid ────────────────────────────────────────────────
+  y += GAP;
+  const innerW = W - PAD * 2;
+  const grid = computeBentoGrid(innerW, HERO_H, GAP, podium.length);
 
-    const xs = [PAD, PAD + cardW + POD_GAP, PAD + (cardW + POD_GAP) * 2];
-    // Card order on screen: silver(left), gold(center), bronze(right).
-    // memberRows indexes: [0]=gold #1, [1]=silver #2, [2]=bronze #3.
-    const slots = [
-      { row: podiumRows[1], icon: resolved[1]?.icon, rankLabel: "2ND", rankColor: PALETTE.silver, isPrimary: false, x: xs[0], h: POD_SIDE_H },
-      { row: podiumRows[0], icon: resolved[0]?.icon, rankLabel: "1ST", rankColor: PALETTE.gold,   isPrimary: true,  x: xs[1], h: POD_CENTER_H },
-      { row: podiumRows[2], icon: resolved[2]?.icon, rankLabel: "3RD", rankColor: PALETTE.bronze, isPrimary: false, x: xs[2], h: POD_SIDE_H },
-    ].filter((s) => s.row); // gracefully drop slots if <3 members
+  drawMemberHeroTile(
+    ctx,
+    PAD + grid.heroRect.x,
+    y + grid.heroRect.y,
+    grid.heroRect.w,
+    grid.heroRect.h,
+    hero,
+    resolved[0]?.avatar || null,
+  );
 
-    for (const slot of slots) {
-      const cardY = podRow + (POD_CENTER_H - slot.h); // bottom-align cards
-      const gameLabel = slot.row.topGame
-        ? `${slot.row.topGame.key} · ${fmtTime(slot.row.topGame.minutes)}`
-        : null;
-      drawPodCard(ctx, slot.x, cardY, cardW, slot.h, {
-        rankLabel: slot.rankLabel,
-        rankColor: slot.rankColor,
-        icon: slot.icon,
-        name: slot.row.displayName,
-        gameLabel,
-        hoursLabel: fmtTime(slot.row.voiceMinutes),
-        isPrimary: slot.isPrimary,
-      });
-    }
-    y += POD_CENTER_H;
-  }
+  podium.forEach((row, i) => {
+    const rect = grid.smallRects[i];
+    drawMemberPodiumTile(
+      ctx,
+      PAD + rect.x,
+      y + rect.y,
+      rect.w,
+      rect.h,
+      row,
+      resolved[i + 1]?.avatar || null,
+      i + 2, // rank 2 or 3
+    );
+  });
+  y += HERO_H;
 
-  // ── List 4..10 ────────────────────────────────────────────────────────
-  if (listRows.length > 0) {
-    y += SEC_GAP;
-    const innerW = W - PAD * 2;
-    ctx.fillStyle = PALETTE.usersPanel;
-    roundRect(ctx, PAD, y, innerW, listH, RADIUS * SCALE);
+  // ── Leaderboard 4–10 ──────────────────────────────────────────────────
+  if (ladder.length > 0) {
+    y += GAP;
+    ctx.fillStyle = PALETTE.tileBg;
+    roundRect(ctx, PAD, y, innerW, ladderH, RADIUS * SCALE);
     ctx.fill();
-
-    // Section header label.
-    drawText(ctx, "TOP MEMBERS 4–10",
-      PAD + 18 * SCALE, y + LIST_PAD_TOP + 18 * SCALE,
-      { size: 10 * SCALE, weight: "bold", color: PALETTE.usersMuted });
-
-    // Divider beneath the header.
-    ctx.strokeStyle = PALETTE.usersBorder;
-    ctx.lineWidth = 1 * SCALE;
-    ctx.beginPath();
-    const divY = y + LIST_PAD_TOP + LIST_HEADER_H - 1 * SCALE;
-    ctx.moveTo(PAD, divY);
-    ctx.lineTo(PAD + innerW, divY);
-    ctx.stroke();
-
-    // Find leader of positions 4..N for bar scaling.
-    const topVoice = listRows.reduce((m, r) => Math.max(m, r.voiceMinutes), 0);
-
-    listRows.forEach((row, i) => {
-      const rowY = y + LIST_PAD_TOP + LIST_HEADER_H + ROW_H * i;
-      const icon = resolved[i + 3]?.icon || null;
-      const gameLabel = row.topGame
-        ? `${row.topGame.key} · ${fmtTime(row.topGame.minutes)}`
-        : null;
-      const barPct = topVoice > 0 ? row.voiceMinutes / topVoice : 0;
-      drawProgressRow(ctx, PAD, rowY, innerW, ROW_H, {
-        rank: i + 4,
-        avatars: icon ? [icon] : [],
-        extraCount: 0,
-        name: row.displayName,
-        gameLabel,
-        hoursLabel: fmtTime(row.voiceMinutes),
-        barPct,
-      });
+    const leaderMinutes = ladder[0].voiceMinutes;
+    ladder.forEach((row, i) => {
+      const rowY = y + LADDER_PAD_Y + LADDER_ROW_H * i;
+      const enriched = { ...row, avatar: resolved[i + 3]?.avatar || null };
+      drawLeaderboardRow(
+        ctx,
+        PAD + 14 * SCALE,
+        rowY,
+        innerW - 28 * SCALE,
+        LADDER_ROW_H,
+        enriched,
+        i + 4,
+        leaderMinutes,
+      );
     });
   }
 
