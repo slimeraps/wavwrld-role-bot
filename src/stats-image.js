@@ -41,6 +41,10 @@ const PALETTE = {
   pinkBorder: "rgba(255, 166, 201, 0.45)",
   blue: "#9ec5ff",
   green: "#b8e3a1",
+  // Bento tile tokens.
+  tileBg:        "rgba(29,28,37,0.62)",
+  tileBgVoice:   "rgba(28,60,40,0.62)",
+  tileHighlight: "rgba(255,255,255,0.05)",
 };
 
 const PADDING = 20;
