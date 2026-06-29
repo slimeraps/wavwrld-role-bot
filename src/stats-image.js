@@ -444,6 +444,49 @@ function selectLeader(sections) {
   return leader;
 }
 
+// Returns { heroRect, smallRects[] } for a bento grid of given outer size.
+// All values are in the same pixel space as inputs (caller multiplies by
+// SCALE before calling, or not — this helper is unit-agnostic).
+//
+// Layouts:
+//   smallCount=0 → hero fills full rect, smallRects=[].
+//   smallCount=1 → hero 1.5fr left, 1 small 1fr right, both full height.
+//   smallCount=2 → hero 1.5fr left, 2 smalls stacked in right column.
+//   smallCount=3 → hero 1.5fr left, 3 smalls in 1-column stack on right.
+//   smallCount=4 → hero 1.5fr left, 2x2 grid of smalls on right.
+function computeBentoGrid(w, h, gap, smallCount) {
+  if (smallCount <= 0) {
+    return { heroRect: { x: 0, y: 0, w, h }, smallRects: [] };
+  }
+  const colSplit = w - gap;
+  const heroW = Math.floor(colSplit * 1.5 / 2.5);
+  const smallW = colSplit - heroW;
+  const heroRect = { x: 0, y: 0, w: heroW, h };
+  const smallX = heroW + gap;
+
+  if (smallCount === 1) {
+    return { heroRect, smallRects: [{ x: smallX, y: 0, w: smallW, h }] };
+  }
+  if (smallCount === 2 || smallCount === 3) {
+    const tileH = Math.floor((h - gap * (smallCount - 1)) / smallCount);
+    const smallRects = [];
+    for (let i = 0; i < smallCount; i += 1) {
+      smallRects.push({ x: smallX, y: i * (tileH + gap), w: smallW, h: tileH });
+    }
+    return { heroRect, smallRects };
+  }
+  // smallCount === 4 → 2x2.
+  const tileW = Math.floor((smallW - gap) / 2);
+  const tileH = Math.floor((h - gap) / 2);
+  const smallRects = [
+    { x: smallX,                  y: 0,            w: tileW, h: tileH },
+    { x: smallX + tileW + gap,    y: 0,            w: tileW, h: tileH },
+    { x: smallX,                  y: tileH + gap,  w: tileW, h: tileH },
+    { x: smallX + tileW + gap,    y: tileH + gap,  w: tileW, h: tileH },
+  ];
+  return { heroRect, smallRects };
+}
+
 async function renderUsersDefault({ guildName, title, totals, members, guild }) {
   const memberRows = members.slice(0, 10);
   const podiumRows = memberRows.slice(0, 3);
@@ -892,4 +935,5 @@ module.exports = {
   __drawProgressRow: drawProgressRow,
   __userAvatarCache: userAvatarCache,
   __selectLeader: selectLeader,
+  __computeBentoGrid: computeBentoGrid,
 };

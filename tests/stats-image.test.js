@@ -108,3 +108,48 @@ test("selectLeader ties break to the earliest section in input order", () => {
   const b = { key: "voice",   memberCount: 4 };
   assert.equal(stats.__selectLeader([a, b]), a);
 });
+
+test("computeBentoGrid with 0 small tiles → hero fills the rect", () => {
+  const grid = stats.__computeBentoGrid(600, 240, 10, 0);
+  assert.deepEqual(grid.heroRect, { x: 0, y: 0, w: 600, h: 240 });
+  assert.deepEqual(grid.smallRects, []);
+});
+
+test("computeBentoGrid with 1 small tile → hero + 1 full-height column", () => {
+  const grid = stats.__computeBentoGrid(610, 240, 10, 1);
+  // hero takes 1.5fr of available split, small takes 1fr.
+  // available = 610 - 10 = 600; hero = 600 * 1.5/2.5 = 360; small = 240.
+  assert.deepEqual(grid.heroRect, { x: 0, y: 0, w: 360, h: 240 });
+  assert.equal(grid.smallRects.length, 1);
+  assert.deepEqual(grid.smallRects[0], { x: 370, y: 0, w: 240, h: 240 });
+});
+
+test("computeBentoGrid with 2 small tiles → vertical stack on right", () => {
+  const grid = stats.__computeBentoGrid(610, 250, 10, 2);
+  assert.equal(grid.heroRect.w, 360);
+  assert.equal(grid.heroRect.h, 250);
+  assert.equal(grid.smallRects.length, 2);
+  // 2 tiles stacked in a 250-tall column with 10px gap → each 120 tall.
+  assert.equal(grid.smallRects[0].h, 120);
+  assert.equal(grid.smallRects[1].h, 120);
+  assert.equal(grid.smallRects[1].y, 130);
+});
+
+test("computeBentoGrid with 3 small tiles → 3-deep stack on right", () => {
+  const grid = stats.__computeBentoGrid(610, 250, 10, 3);
+  assert.equal(grid.smallRects.length, 3);
+  // (250 - 20) / 3 = 76.66 → 76.
+  assert.equal(grid.smallRects[0].h, 76);
+});
+
+test("computeBentoGrid with 4 small tiles → 2x2 grid on right", () => {
+  const grid = stats.__computeBentoGrid(610, 250, 10, 4);
+  assert.equal(grid.smallRects.length, 4);
+  // 4 tiles in a 2x2: each 120 tall, ~115 wide (240/2 - 5).
+  const sums = grid.smallRects.map((r) => `${r.x},${r.y}`);
+  // Tiles are placed row-major: 0=TL, 1=TR, 2=BL, 3=BR.
+  assert.equal(sums[0], "370,0");
+  assert.equal(sums[1], "495,0"); // 370 + 115 + 10
+  assert.equal(sums[2], "370,130");
+  assert.equal(sums[3], "495,130");
+});
