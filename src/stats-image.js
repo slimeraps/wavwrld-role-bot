@@ -821,6 +821,62 @@ function drawHeroTile(ctx, x, y, w, h, opts) {
   drawTileBar(ctx, x, y, w, h, barValue, accent);
 }
 
+function drawSmallTile(ctx, x, y, w, h, opts) {
+  const isVoice = opts.section.key === "voice";
+  const tileBg = isVoice ? PALETTE.tileBgVoice : PALETTE.tileBg;
+  const timeColor = isVoice ? PALETTE.green : PALETTE.blue;
+
+  drawTileChrome(ctx, x, y, w, h, tileBg);
+
+  const innerX = x + 14 * SCALE;
+  const innerW = w - 28 * SCALE;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+
+  // Top label row: "emoji SECTION" left, count right.
+  const labelY = y + 18 * SCALE;
+  ctx.font = `bold ${10 * SCALE}px UI Bold`;
+  ctx.fillStyle = PALETTE.usersMuted;
+  ctx.fillText(`${opts.section.emoji} ${opts.section.title.toUpperCase()}`, innerX, labelY);
+
+  ctx.textAlign = "right";
+  ctx.fillStyle = PALETTE.usersText;
+  ctx.fillText(String(opts.section.memberCount), innerX + innerW, labelY);
+
+  // Activity name.
+  ctx.textAlign = "left";
+  const nameFont = `bold ${15 * SCALE}px UI Bold`;
+  const nameText = truncate(ctx, opts.row.display, innerW, nameFont);
+  ctx.font = nameFont;
+  ctx.fillStyle = PALETTE.usersText;
+  ctx.fillText(nameText, innerX, y + 42 * SCALE);
+
+  // Members line.
+  const memberLabel = (() => {
+    const names = opts.row.memberNames || [];
+    const shown = names.slice(0, 3);
+    const more = names.length - shown.length;
+    if (shown.length === 0) return "";
+    return `${shown.join(", ")}${more > 0 ? ` +${more}` : ""}`;
+  })();
+  if (memberLabel) {
+    const memberFont = `${11 * SCALE}px UI`;
+    const memberText = truncate(ctx, memberLabel, innerW, memberFont);
+    ctx.font = memberFont;
+    ctx.fillStyle = PALETTE.usersMuted;
+    ctx.fillText(memberText, innerX, y + 58 * SCALE);
+  }
+
+  // Time.
+  ctx.font = `bold ${17 * SCALE}px UI Bold`;
+  ctx.fillStyle = timeColor;
+  ctx.fillText(opts.row.timeStr, innerX, y + h - 18 * SCALE);
+
+  // Bottom bar.
+  const barValue = opts.barScale > 0 ? opts.row.minutes / opts.barScale : 0;
+  drawTileBar(ctx, x, y, w, h, barValue, isVoice ? PALETTE.green : PALETTE.pink);
+}
+
 async function renderLiveActivity({ guildName, totalActive, sections }) {
   // Layout constants (1× logical pixels — multiplied by SCALE before drawing).
   const W = 960 * SCALE;
@@ -1104,4 +1160,5 @@ module.exports = {
   __selectLeader: selectLeader,
   __computeBentoGrid: computeBentoGrid,
   __drawHeroTile: drawHeroTile,
+  __drawSmallTile: drawSmallTile,
 };

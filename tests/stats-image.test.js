@@ -186,3 +186,28 @@ test("drawHeroTile uses voice tile background when section is voice", () => {
   const fills = calls.filter((c) => c[0] === "fillStyle").map((c) => c[1]);
   assert.ok(fills.includes("rgba(28,60,40,0.62)"), "voice tile bg used");
 });
+
+test("drawSmallTile draws name, members, and time", () => {
+  const { ctx, calls } = makeStubCtx();
+  stats.__drawSmallTile(ctx, 0, 0, 240, 120, {
+    section: { key: "listening", title: "Listening", emoji: "🎵", memberCount: 2 },
+    row: { display: "Spotify", timeStr: "47m", memberNames: ["Helms", "Cody"], minutes: 47 },
+    barScale: 134,
+  });
+  const texts = calls.filter((c) => c[0] === "fillText").map((c) => c[1]);
+  assert.ok(texts.includes("Spotify"));
+  assert.ok(texts.includes("47m"));
+  assert.ok(texts.some((t) => t.includes("Helms")));
+});
+
+test("drawSmallTile uses voice tile background and green time for voice", () => {
+  const { ctx, calls } = makeStubCtx();
+  stats.__drawSmallTile(ctx, 0, 0, 240, 120, {
+    section: { key: "voice", title: "Voice", emoji: "🎤", memberCount: 8 },
+    row: { display: "General", timeStr: "2h", memberNames: [], minutes: 120 },
+    barScale: 120,
+  });
+  const fills = calls.filter((c) => c[0] === "fillStyle").map((c) => c[1]);
+  assert.ok(fills.includes("rgba(28,60,40,0.62)"), "voice tile bg");
+  assert.ok(fills.includes("#b8e3a1"), "green time color");
+});
