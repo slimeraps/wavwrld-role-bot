@@ -83,7 +83,7 @@ Drawn by a new `drawHeroTile(ctx, x, y, w, h, opts)`. Content top-to-bottom:
 - **Icon block** top-left, 48px square with 12px radius, fill `rgba(255,255,255,0.08)`, contains the section emoji centered. (Future: replace with role icon when available.)
 - **Section label**, immediately right of the icon block: e.g. `"▸ LEADING · PLAYING"`, 10px bold, letter-spaced, muted color.
 - **Activity name** under the label: `opts.row.display`, 22px bold, `usersText`.
-- **Avatar cluster** in the lower half: up to 6 circular avatars (24px logical) overlapping by 10px each; if more than 6 members, draw a `+N` chip after the stack. Each avatar gets a 2px ring in the tile background color so the disks read separately.
+- **Avatar cluster** in the lower half: up to 3 circular avatars (32px logical on the hero — bigger than the 24px small-tile / leaderboard avatars) overlapping by ~12px each, drawn from `row.avatars`. If `row.extraCount > 0`, draw a `+N` chip after the stack. Each avatar gets a 2px ring in the tile background color so the disks read separately. (The snapshot already caps `avatars` at 3 with the rest counted into `extraCount`, so the hero consumes that data shape unchanged.)
 - **Time** below the cluster: `row.timeStr`, 26px bold, pink (green for voice), followed by a small sub-caption `"N in lobby"` / `"N in channel"` / `"N listening"` based on section key, in `usersMuted`.
 - **Bottom progress bar**: 3px tall, full-width-inset, filled to `row.minutes / barScale`. See §2.4 for `barScale`.
 
