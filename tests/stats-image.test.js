@@ -153,3 +153,36 @@ test("computeBentoGrid with 4 small tiles → 2x2 grid on right", () => {
   assert.equal(sums[2], "370,130");
   assert.equal(sums[3], "495,130");
 });
+
+const fakeImage2 = { _fake: true };
+
+test("drawHeroTile draws name, time, and avatar cluster", () => {
+  const { ctx, calls } = makeStubCtx();
+  stats.__drawHeroTile(ctx, 0, 0, 600, 400, {
+    section: { key: "playing", emoji: "🎮", memberCount: 6 },
+    row: {
+      display: "Counter-Strike 2",
+      timeStr: "24m",
+      avatars: [fakeImage2, fakeImage2, fakeImage2],
+      extraCount: 3,
+    },
+    barScale: 60,
+  });
+  const texts = calls.filter((c) => c[0] === "fillText").map((c) => c[1]);
+  assert.ok(texts.includes("Counter-Strike 2"), `expected name in fillText, got ${JSON.stringify(texts)}`);
+  assert.ok(texts.includes("24m"), `expected time in fillText, got ${JSON.stringify(texts)}`);
+  assert.ok(texts.includes("+3"), `expected +N chip in fillText, got ${JSON.stringify(texts)}`);
+  const drawImages = calls.filter((c) => c[0] === "drawImage");
+  assert.equal(drawImages.length, 3, "three avatars drawn");
+});
+
+test("drawHeroTile uses voice tile background when section is voice", () => {
+  const { ctx, calls } = makeStubCtx();
+  stats.__drawHeroTile(ctx, 0, 0, 600, 400, {
+    section: { key: "voice", emoji: "🎤", memberCount: 8 },
+    row: { display: "General VC", timeStr: "2h", avatars: [], extraCount: 0 },
+    barScale: 120,
+  });
+  const fills = calls.filter((c) => c[0] === "fillStyle").map((c) => c[1]);
+  assert.ok(fills.includes("rgba(28,60,40,0.62)"), "voice tile bg used");
+});

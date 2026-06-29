@@ -723,6 +723,104 @@ const LIVE_SECTIONS = [
   { key: "other",     title: "Other",     emoji: "🟣" },
 ];
 
+// Per-section label words for the hero subline (the "N in lobby" caption).
+const HERO_SUB_WORD = {
+  playing:   "in lobby",
+  voice:     "in channel",
+  listening: "listening",
+  watching:  "watching",
+  other:     "active",
+};
+
+// Draws the Live Activity hero tile.
+//
+// opts:
+//   section: { key, emoji, memberCount }
+//   row:     { display, timeStr, avatars, extraCount }
+//   barScale: number — denominator for the bottom progress bar, in minutes
+//   minutes:  number — row.minutes (used for the bar). If omitted, bar fills full.
+function drawHeroTile(ctx, x, y, w, h, opts) {
+  const isVoice = opts.section.key === "voice";
+  const tileBg = isVoice ? PALETTE.tileBgVoice : PALETTE.tileBg;
+  const accent = isVoice ? PALETTE.green : PALETTE.pink;
+  const timeColor = isVoice ? PALETTE.green : PALETTE.pink;
+
+  drawTileChrome(ctx, x, y, w, h, tileBg);
+
+  // Left-edge accent bar.
+  ctx.fillStyle = accent;
+  roundRect(ctx, x, y + 14 * SCALE, 3 * SCALE, h - 28 * SCALE, 2 * SCALE);
+  ctx.fill();
+
+  const innerX = x + 20 * SCALE;
+  const innerW = w - 40 * SCALE;
+
+  // Icon block.
+  const iconSize = 48 * SCALE;
+  const iconY = y + 18 * SCALE;
+  ctx.fillStyle = "rgba(255,255,255,0.08)";
+  roundRect(ctx, innerX, iconY, iconSize, iconSize, 12 * SCALE);
+  ctx.fill();
+  ctx.fillStyle = PALETTE.usersText;
+  ctx.font = `${22 * SCALE}px UI`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(opts.section.emoji, innerX + iconSize / 2, iconY + iconSize / 2);
+
+  // Section label + activity name (right of icon block).
+  const textX = innerX + iconSize + 14 * SCALE;
+  const textW = innerW - iconSize - 14 * SCALE;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+
+  const label = `▸ LEADING · ${opts.section.key.toUpperCase()}`;
+  ctx.fillStyle = PALETTE.usersMuted;
+  ctx.font = `bold ${10 * SCALE}px UI Bold`;
+  ctx.fillText(label, textX, iconY + 14 * SCALE);
+
+  const nameFont = `bold ${22 * SCALE}px UI Bold`;
+  const nameText = truncate(ctx, opts.row.display, textW, nameFont);
+  ctx.font = nameFont;
+  ctx.fillStyle = PALETTE.usersText;
+  ctx.fillText(nameText, textX, iconY + 40 * SCALE);
+
+  // Avatar cluster (centered horizontally) + time below it.
+  const avSize = 32 * SCALE;
+  const avStep = 20 * SCALE;
+  const avatars = opts.row.avatars || [];
+  const extraCount = opts.row.extraCount || 0;
+  const clusterWidth = avatars.length === 0
+    ? avSize
+    : avSize + avStep * (avatars.length - 1);
+  const clusterStartX = innerX + (innerW - clusterWidth) / 2;
+  const clusterY = y + h - 96 * SCALE;
+  drawAvatarCluster(ctx, clusterStartX, clusterY, {
+    avatars,
+    extraCount,
+    size: avSize,
+    step: avStep,
+    ringColor: tileBg.replace(/[\d.]+\)$/, "1)"), // opaque ring matching tile bg
+  });
+
+  // Time + sub-caption.
+  const timeY = y + h - 36 * SCALE;
+  ctx.font = `bold ${26 * SCALE}px UI Bold`;
+  ctx.fillStyle = timeColor;
+  ctx.textAlign = "center";
+  ctx.fillText(opts.row.timeStr, innerX + innerW / 2, timeY);
+
+  const sub = `${opts.section.memberCount} ${HERO_SUB_WORD[opts.section.key] || "active"}`;
+  ctx.font = `${12 * SCALE}px UI`;
+  ctx.fillStyle = PALETTE.usersMuted;
+  ctx.fillText(sub, innerX + innerW / 2, timeY + 18 * SCALE);
+
+  // Bottom progress bar.
+  const barValue = opts.barScale > 0 && typeof opts.minutes === "number"
+    ? opts.minutes / opts.barScale
+    : 1;
+  drawTileBar(ctx, x, y, w, h, barValue, accent);
+}
+
 async function renderLiveActivity({ guildName, totalActive, sections }) {
   // Layout constants (1× logical pixels — multiplied by SCALE before drawing).
   const W = 960 * SCALE;
@@ -1005,4 +1103,5 @@ module.exports = {
   __userAvatarCache: userAvatarCache,
   __selectLeader: selectLeader,
   __computeBentoGrid: computeBentoGrid,
+  __drawHeroTile: drawHeroTile,
 };
