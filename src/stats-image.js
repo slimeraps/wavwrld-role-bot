@@ -882,31 +882,19 @@ async function renderLiveActivity({ guildName, totalActive, sections }) {
   const W = 960 * SCALE;
   const PAD = 20 * SCALE;
   const HEADER_H = 72 * SCALE;
-  const SEC_GAP = 12 * SCALE;
-  const SEC_HEADER_TOP = 18 * SCALE;       // y offset from top of section panel to header text
-  const SEC_HEADER_BLOCK = 30 * SCALE;     // total vertical space the header occupies
-  const SEC_PAD_BOTTOM = 12 * SCALE;
-  const ROW_H = 36 * SCALE;
+  const GAP = 10 * SCALE;
   const EMPTY_PANEL_H = 80 * SCALE;
+  const HERO_H = 232 * SCALE;
 
-  const hasContent = sections && sections.length > 0;
-
-  // Compute total height.
-  const sectionHeights = (sections || []).map((s) =>
-    SEC_HEADER_BLOCK + ROW_H * s.rows.length + SEC_PAD_BOTTOM,
-  );
-  const sectionsTotal = sectionHeights.reduce(
-    (sum, h) => sum + SEC_GAP + h,
-    0,
-  );
-  const bodyH = hasContent ? sectionsTotal : SEC_GAP + EMPTY_PANEL_H;
-  const height = PAD + HEADER_H + bodyH + PAD;
+  const hasContent = Array.isArray(sections) && sections.length > 0;
+  const bodyH = hasContent ? HERO_H : EMPTY_PANEL_H;
+  const height = PAD + HEADER_H + GAP + bodyH + PAD;
 
   const canvas = createCanvas(W, height);
   const ctx = canvas.getContext("2d");
   drawCanvasBackground(ctx, W, height);
 
-  // ── Header ────────────────────────────────────────────────────────────
+  // ── Header (unchanged structurally) ───────────────────────────────────
   let y = PAD;
   ctx.fillStyle = PALETTE.usersPanel;
   roundRect(ctx, PAD, y, W - PAD * 2, HEADER_H, RADIUS * SCALE);
@@ -930,7 +918,6 @@ async function renderLiveActivity({ guildName, totalActive, sections }) {
   ctx.moveTo(dividerX, y + 18 * SCALE);
   ctx.lineTo(dividerX, y + HEADER_H - 18 * SCALE);
   ctx.stroke();
-
   ctx.textAlign = "right";
   ctx.textBaseline = "alphabetic";
   ctx.font = `bold ${10 * SCALE}px UI Bold`;
@@ -939,12 +926,11 @@ async function renderLiveActivity({ guildName, totalActive, sections }) {
   ctx.font = `bold ${26 * SCALE}px UI Bold`;
   ctx.fillStyle = PALETTE.pink;
   ctx.fillText(String(totalActive ?? 0), activeRightX, y + 58 * SCALE);
-
   y += HEADER_H;
 
   // ── Empty state ───────────────────────────────────────────────────────
   if (!hasContent) {
-    y += SEC_GAP;
+    y += GAP;
     ctx.fillStyle = PALETTE.usersPanel;
     roundRect(ctx, PAD, y, W - PAD * 2, EMPTY_PANEL_H, RADIUS * SCALE);
     ctx.fill();
@@ -957,62 +943,42 @@ async function renderLiveActivity({ guildName, totalActive, sections }) {
     return canvas.toBuffer("image/jpeg");
   }
 
-  // ── Sections ──────────────────────────────────────────────────────────
-  // Bar scale uses the leader across all sections so bars are comparable.
-  const topMinutes = sections.reduce((max, s) =>
-    s.rows.reduce((m, r) => Math.max(m, r.minutes), max),
-  0);
+  // ── Bento grid ────────────────────────────────────────────────────────
+  y += GAP;
+  const leader = selectLeader(sections);
+  const others = sections.filter((s) => s !== leader);
+  const innerW = W - PAD * 2;
+  const grid = computeBentoGrid(innerW, HERO_H, GAP, others.length);
 
-  sections.forEach((section, i) => {
-    y += SEC_GAP;
-    const innerW = W - PAD * 2;
-    const sectionH = sectionHeights[i];
+  // Bar scale: max minutes across all top rows of all displayed sections.
+  const barScale = sections.reduce(
+    (m, s) => Math.max(m, s.rows[0]?.minutes || 0),
+    0,
+  );
 
-    // Section panel.
-    ctx.fillStyle = PALETTE.usersPanel;
-    roundRect(ctx, PAD, y, innerW, sectionH, RADIUS * SCALE);
-    ctx.fill();
+  // Hero.
+  const heroRow = leader.rows[0];
+  drawHeroTile(
+    ctx,
+    PAD + grid.heroRect.x,
+    y + grid.heroRect.y,
+    grid.heroRect.w,
+    grid.heroRect.h,
+    { section: leader, row: heroRow, barScale, minutes: heroRow.minutes },
+  );
 
-    // Header line (title left, subtitle right).
-    const isVoice = section.key === "voice";
-    const accentColor = isVoice ? PALETTE.green : PALETTE.usersMuted;
-    const headerTitle = `${section.emoji} ${section.title}`;
-    const roleWord = section.rows.length === 1 ? "role" : "roles";
-    const memberWord = section.memberCount === 1 ? "member" : "members";
-    const headerSub = `${section.rows.length} ${roleWord} · ${section.memberCount} ${memberWord}`;
-    drawSectionHeader(ctx, PAD, y + SEC_HEADER_TOP, innerW, {
-      title: headerTitle,
-      subtitle: headerSub,
-      accent: accentColor,
-    });
-
-    // Rows.
-    section.rows.forEach((row, j) => {
-      const rowY = y + SEC_HEADER_BLOCK + ROW_H * j;
-      // Members column doubles as the "game label" slot in drawProgressRow.
-      const shown = row.memberNames.slice(0, 3);
-      const extra = row.memberNames.length > shown.length
-        ? ` +${row.memberNames.length - shown.length}`
-        : "";
-      const memberLabel = shown.length > 0 ? `${shown.join(", ")}${extra}` : "";
-      const barPct = topMinutes > 0 ? row.minutes / topMinutes : 0;
-
-      // drawProgressRow expects a rank value; live activity has no ranking, so
-      // pass an empty string and let the renderer's center-aligned slot stay
-      // blank. We reuse drawProgressRow's icon + name + label + time columns.
-      drawProgressRow(ctx, PAD, rowY, innerW, ROW_H, {
-        rank: "",
-        avatars: row.avatars || [],
-        extraCount: row.extraCount || 0,
-        name: row.display,
-        gameLabel: memberLabel,
-        hoursLabel: row.timeStr,
-        barPct,
-        timeColor: isVoice ? PALETTE.green : PALETTE.blue,
-      });
-    });
-
-    y += sectionH;
+  // Smalls.
+  others.forEach((section, i) => {
+    const rect = grid.smallRects[i];
+    const topRow = section.rows[0];
+    drawSmallTile(
+      ctx,
+      PAD + rect.x,
+      y + rect.y,
+      rect.w,
+      rect.h,
+      { section, row: topRow, barScale },
+    );
   });
 
   return canvas.toBuffer("image/jpeg");
