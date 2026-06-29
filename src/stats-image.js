@@ -898,6 +898,71 @@ function drawMemberHeroTile(ctx, x, y, w, h, row, avatar) {
   drawTileBar(ctx, x, y, w, h, 1, PALETTE.pink);
 }
 
+// rank: 2 → silver, 3 → bronze (no other ranks accepted).
+function drawMemberPodiumTile(ctx, x, y, w, h, row, avatar, rank) {
+  drawTileChrome(ctx, x, y, w, h, PALETTE.tileBg);
+
+  const rankInfo = rank === 2
+    ? { label: "🥈 2ND · SILVER", color: PALETTE.silver }
+    : { label: "🥉 3RD · BRONZE", color: PALETTE.bronze };
+
+  const padX = 14 * SCALE;
+  const avSize = 44 * SCALE;
+  const avCx = x + padX + avSize / 2;
+  const avCy = y + h / 2;
+
+  // Avatar.
+  if (avatar) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(avCx, avCy, avSize / 2, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.clip();
+    ctx.drawImage(avatar, avCx - avSize / 2, avCy - avSize / 2, avSize, avSize);
+    ctx.restore();
+  } else {
+    ctx.beginPath();
+    ctx.arc(avCx, avCy, avSize / 2, 0, Math.PI * 2);
+    ctx.fillStyle = PALETTE.usersBorder;
+    ctx.fill();
+  }
+
+  // Right-aligned time.
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  ctx.font = `bold ${18 * SCALE}px UI Bold`;
+  ctx.fillStyle = PALETTE.blue;
+  const timeStr = fmtTime(row.voiceMinutes);
+  ctx.fillText(timeStr, x + w - padX, avCy);
+  const timeW = ctx.measureText(timeStr).width;
+
+  // Text stack (left-aligned, between avatar and time).
+  const textX = x + padX + avSize + 12 * SCALE;
+  const textRight = x + w - padX - timeW - 12 * SCALE;
+  const textW = Math.max(0, textRight - textX);
+
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+  ctx.font = `bold ${10 * SCALE}px UI Bold`;
+  ctx.fillStyle = rankInfo.color;
+  ctx.fillText(rankInfo.label, textX, avCy - 14 * SCALE);
+
+  const nameFont = `bold ${15 * SCALE}px UI Bold`;
+  const nameText = truncate(ctx, row.displayName, textW, nameFont);
+  ctx.font = nameFont;
+  ctx.fillStyle = PALETTE.usersText;
+  ctx.fillText(nameText, textX, avCy + 4 * SCALE);
+
+  const gameLabel = row.topGame
+    ? `${row.topGame.key} · ${fmtTime(row.topGame.minutes)}`
+    : "—";
+  const gameFont = `${11 * SCALE}px UI`;
+  const gameText = truncate(ctx, gameLabel, textW, gameFont);
+  ctx.font = gameFont;
+  ctx.fillStyle = PALETTE.usersMuted;
+  ctx.fillText(gameText, textX, avCy + 20 * SCALE);
+}
+
 function drawSmallTile(ctx, x, y, w, h, opts) {
   const isVoice = opts.section.key === "voice";
   const tileBg = isVoice ? PALETTE.tileBgVoice : PALETTE.tileBg;
@@ -1205,4 +1270,5 @@ module.exports = {
   __drawHeroTile: drawHeroTile,
   __drawSmallTile: drawSmallTile,
   __drawMemberHeroTile: drawMemberHeroTile,
+  __drawMemberPodiumTile: drawMemberPodiumTile,
 };

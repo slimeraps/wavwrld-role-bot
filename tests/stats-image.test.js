@@ -226,3 +226,20 @@ test("drawMemberHeroTile draws rank, name, game line, and big voice time", () =>
   assert.ok(texts.some((t) => t.includes("Counter-Strike 2")));
   assert.ok(texts.some((t) => t.includes("1d")), `expected day-formatted voice time, got ${JSON.stringify(texts)}`);
 });
+
+test("drawMemberPodiumTile draws rank label, name, game line, and time", () => {
+  const { ctx, calls } = makeStubCtx();
+  // Use 800×232 (≈400×116 logical at SCALE=2) so the text stack has room to
+  // render without truncation under the stub's measureText heuristic.
+  stats.__drawMemberPodiumTile(ctx, 0, 0, 800, 232, {
+    displayName: "Cody",
+    voiceMinutes: 39 * 60,
+    topGame: { key: "Spotify", minutes: 15 * 60 },
+  }, fakeImage2, 2);
+  const texts = calls.filter((c) => c[0] === "fillText").map((c) => c[1]);
+  assert.ok(texts.some((t) => t.includes("2ND")));
+  assert.ok(texts.includes("Cody"));
+  assert.ok(texts.some((t) => t.includes("Spotify")));
+  // 39h = 2340 minutes → days=1, hours=15 → "1d 15h"
+  assert.ok(texts.some((t) => t.includes("1d")), `expected "1d" in time output, got ${JSON.stringify(texts)}`);
+});
