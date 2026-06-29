@@ -1,4 +1,4 @@
-# WAV Bot — 10.8.1 (stats-channel embed shows unmatched games too)
+# WAV Bot — 10.9.0 (user profile pictures in live activity and top-members panels)
 
 10.0 adds an owner-only Role Doctor plus activity aliases so mismatched
 presence names can resolve to the right premade role instead of creating
@@ -17,6 +17,33 @@ A separate desktop console at `../wav-bot-console/` ships in tandem
 (v0.1 released same day as bot 10.6.0) — a Windows Electron app that
 polls the `/api/activity` panel endpoint and renders a live native
 view of guild activity with optional toast notifications.
+
+## 10.9.0
+
+Both rendered panels (`/stats/<id>.jpg` for !stats and `/live/<id>.jpg`
+for live activity) now lead each row with Discord user profile pictures
+instead of role icons. Top Members rows — including the 1st/2nd/3rd
+podium cards — show the user's own avatar. Live Activity rows show a
+stack of up to three overlapping member avatars with a `+N` chip when
+more than three members are in the activity.
+
+- `src/stats-image.js`: new `loadUserAvatarCached(guild, userId)` mirrors
+  the existing role-icon cache pattern, keyed by the resolved
+  `displayAvatarURL` (so an avatar change naturally invalidates).
+  `drawProgressRow` redesigned to take `avatars: Image[]` +
+  `extraCount: number` and draw a stacked-avatar group with optional
+  `+N` overflow chip. `renderUsersDefault` now resolves user avatars
+  per row instead of role icons; the `roleByGameKey` parameter is
+  removed.
+- `src/stats-channel.js`: `buildLiveActivitySnapshot` resolves up to
+  three member avatars per row in parallel and attaches `row.avatars`
+  and `row.extraCount`. Dead `loadRoleIcon`, `liveIconCache`, and the
+  `loadImage` import are removed.
+- `src/panel.js`: `renderStatsImage` drops the `roleByGameKey` plumbing.
+- `tests/stats-image.test.js`: new file with stub-canvas coverage of
+  `drawProgressRow`'s zero/one/three-avatar and `+N` chip paths.
+- `tests/stats-channel.test.js`: new coverage for the `row.avatars` +
+  `row.extraCount` shape on live snapshot rows.
 
 ## 10.8.1
 
