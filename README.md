@@ -1,4 +1,4 @@
-# WAV Bot — 10.9.0 (user profile pictures in live activity and top-members panels)
+# WAV Bot — 10.10.0 (bento redesign for live activity and top-members panels)
 
 10.0 adds an owner-only Role Doctor plus activity aliases so mismatched
 presence names can resolve to the right premade role instead of creating
@@ -17,6 +17,47 @@ A separate desktop console at `../wav-bot-console/` ships in tandem
 (v0.1 released same day as bot 10.6.0) — a Windows Electron app that
 polls the `/api/activity` panel endpoint and renders a live native
 view of guild activity with optional toast notifications.
+
+## 10.10.0
+
+Both rendered panels are redesigned as a **bento grid**. The Live Activity
+embed now picks whichever section (Playing / Voice / Listening / Watching /
+Other) has the most members and gives it a large hero tile with a member
+avatar cluster and bottom progress bar; the remaining sections become
+smaller tiles in a grid that adapts (1, 2, 3, or 4 small tiles) and
+collapses entirely when nothing else is happening. The Top Members embed
+gets the same treatment: #1 lives in a hero tile with rank + avatar +
+name and the user's top game shown at the same 22px weight as the name,
+plus a centered "VOICE · 30D" total. #2 and #3 sit beside the hero as
+compact silver/bronze tiles, and ranks 4–10 sit in a tight leaderboard
+panel below with a relative-time bar per row.
+
+- `src/stats-image.js`: replaces the section-strip + podium-card layout
+  with a bento grid. New helpers: `selectLeader` picks the hero section
+  by member count (ties → input order); `computeBentoGrid(w,h,gap,n)`
+  returns `{heroRect, smallRects[]}` for 0..4 small tiles in dynamic
+  layouts. Five new tile drawers: `drawHeroTile` / `drawSmallTile` for
+  Live Activity, `drawMemberHeroTile` / `drawMemberPodiumTile` /
+  `drawLeaderboardRow` for Top Members. Three shared chrome primitives:
+  `drawTileChrome` (rounded bg + inset highlight), `drawTileBar`
+  (bottom-of-tile progress bar), `drawAvatarCluster` (overlapping
+  circular avatars with optional `+N` chip). Voice sections get a
+  green tile variant; everything else uses the standard plum + pink/blue.
+  New `PALETTE` tokens `tileBg`, `tileBgVoice`, `tileHighlight`.
+- `src/stats-image.js`: deletes `drawPodCard`, `drawProgressRow`, and
+  `drawSectionHeader` along with the `__drawProgressRow` test export —
+  all unused after the rewrite.
+- `renderLiveActivity` and `renderUsersDefault` are rewritten end-to-end
+  to use the new helpers; both renderers keep the same input shape so
+  call sites in `src/panel.js` and `src/stats-channel.js` are unchanged.
+  Each tile's bar scales against the leader row's minutes across all
+  displayed sections, so bars are comparable across tiles.
+- `tests/stats-image.test.js`: drops the four obsolete `drawProgressRow`
+  tests and adds 16 new tests covering `selectLeader` (4), the grid
+  helper across 0..4 small-tile counts (5), and smoke tests for each
+  tile drawer (7).
+- Spec and plan committed to `docs/superpowers/specs/` and
+  `docs/superpowers/plans/` for traceability.
 
 ## 10.9.0
 
