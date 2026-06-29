@@ -243,3 +243,20 @@ test("drawMemberPodiumTile draws rank label, name, game line, and time", () => {
   // 39h = 2340 minutes → days=1, hours=15 → "1d 15h"
   assert.ok(texts.some((t) => t.includes("1d")), `expected "1d" in time output, got ${JSON.stringify(texts)}`);
 });
+
+test("drawLeaderboardRow draws rank, name, time and a relative bar", () => {
+  const { ctx, calls } = makeStubCtx();
+  stats.__drawLeaderboardRow(ctx, 0, 0, 1200, 64, {
+    displayName: "Sarah",
+    voiceMinutes: 14 * 60,
+    topGame: { key: "Minecraft", minutes: 9 * 60 },
+    avatar: fakeImage2,
+  }, 4, 28 * 60);
+  const texts = calls.filter((c) => c[0] === "fillText").map((c) => c[1]);
+  assert.ok(texts.some((t) => t.includes("04")));
+  assert.ok(texts.some((t) => t.includes("Sarah")));
+  assert.ok(texts.some((t) => t.includes("14h")));
+  // Bar uses roundRect + fill twice (ghost track + filled portion since 14h/28h > 0).
+  const fills = calls.filter((c) => c[0] === "fill");
+  assert.ok(fills.length >= 2, `expected ≥2 fill calls for bar, got ${fills.length}`);
+});
