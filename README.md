@@ -1,4 +1,4 @@
-# WAV Bot — 10.10.0 (bento redesign for live activity and top-members panels)
+# WAV Bot — 10.10.1 (live activity overflow panel + small-tile overlap fix)
 
 10.0 adds an owner-only Role Doctor plus activity aliases so mismatched
 presence names can resolve to the right premade role instead of creating
@@ -17,6 +17,31 @@ A separate desktop console at `../wav-bot-console/` ships in tandem
 (v0.1 released same day as bot 10.6.0) — a Windows Electron app that
 polls the `/api/activity` panel endpoint and renders a live native
 view of guild activity with optional toast notifications.
+
+## 10.10.1
+
+Two follow-ups to the 10.10.0 bento redesign that shipped together.
+
+- **Live activity overflow panel.** The bento grid renders one tile per
+  section (leader → hero, others → small tiles), so every non-top row was
+  being dropped — including synthetic rows for untracked games. A new
+  "ALSO HAPPENING" panel sits below the bento and lists every dropped
+  row: section emoji, game name, member list, time. Voice rows stay
+  green; no cap, no truncation by row count.
+- **Small-tile text overlap fix.** When the side column held 3 small
+  tiles stacked vertically (~76 logical px each), `drawSmallTile`'s
+  bottom-anchored time text rendered directly on top of the members
+  line. Restructured to put name and time on a shared 15px row with
+  members at 11px below — no overlap at any tile height ≥70px.
+- `src/stats-image.js`: new `drawOverflowRow` / `drawOverflowPanel` /
+  `overflowPanelHeight` helpers. `renderLiveActivity` computes the
+  overflow list up front (every `section.rows[i]` where `i >= 1`),
+  factors it into the canvas height, and draws the panel after the
+  bento grid. `drawSmallTile` rewrites the name/time/members stack
+  per above.
+- `tests/stats-image.test.js`: two new tests for `drawOverflowPanel`
+  (multi-row + empty cases). Existing small-tile tests still pass
+  because the change moved coordinates, not the `fillText` content.
 
 ## 10.10.0
 
