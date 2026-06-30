@@ -281,11 +281,25 @@ function drawCanvasBackground(ctx, w, h) {
 // Picks the section with the highest memberCount. Ties resolve to the
 // section that appears first in `sections` (which is LIVE_SECTIONS order
 // because buildLiveActivitySnapshot iterates that array).
+// Top-row member count for a section — the count of people in the activity
+// that will become the hero tile if this section wins. We compare on this
+// (not the section-wide unique-member total) because the hero only ever
+// renders one row, and the user expects "leader = the loudest single
+// activity", not "leader = the section with the most diverse activity mix".
+function topRowMemberCount(section) {
+  return section?.rows?.[0]?.memberNames?.length || 0;
+}
+
 function selectLeader(sections) {
   if (!Array.isArray(sections) || sections.length === 0) return null;
   let leader = sections[0];
+  let leaderCount = topRowMemberCount(leader);
   for (const s of sections) {
-    if (s.memberCount > leader.memberCount) leader = s;
+    const c = topRowMemberCount(s);
+    if (c > leaderCount) {
+      leader = s;
+      leaderCount = c;
+    }
   }
   return leader;
 }
@@ -527,17 +541,21 @@ function drawHeroTile(ctx, x, y, w, h, opts) {
   const innerX = x + 20 * SCALE;
   const innerW = w - 40 * SCALE;
 
-  // Icon block.
+  // Icon block — first letter of the activity name. (Discord emoji glyphs
+  // don't render on the DejaVu fonts shipped in the Fly Docker image, so a
+  // typed initial reads better than a tofu square. Future: swap for the
+  // role icon when one is configured for this row.)
   const iconSize = 48 * SCALE;
   const iconY = y + 18 * SCALE;
   ctx.fillStyle = "rgba(255,255,255,0.08)";
   roundRect(ctx, innerX, iconY, iconSize, iconSize, 12 * SCALE);
   ctx.fill();
+  const initial = (opts.row.display || "?").trim().charAt(0).toUpperCase() || "?";
   ctx.fillStyle = PALETTE.usersText;
-  ctx.font = `${22 * SCALE}px UI`;
+  ctx.font = `bold ${24 * SCALE}px UI Bold`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(opts.section.emoji, innerX + iconSize / 2, iconY + iconSize / 2);
+  ctx.fillText(initial, innerX + iconSize / 2, iconY + iconSize / 2);
 
   // Section label + activity name (right of icon block).
   const textX = innerX + iconSize + 14 * SCALE;
@@ -545,7 +563,7 @@ function drawHeroTile(ctx, x, y, w, h, opts) {
   ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
 
-  const label = `▸ LEADING · ${opts.section.key.toUpperCase()}`;
+  const label = `LEADING · ${opts.section.key.toUpperCase()}`;
   ctx.fillStyle = PALETTE.usersMuted;
   ctx.font = `bold ${10 * SCALE}px UI Bold`;
   ctx.fillText(label, textX, iconY + 14 * SCALE);
@@ -581,7 +599,11 @@ function drawHeroTile(ctx, x, y, w, h, opts) {
   ctx.textAlign = "center";
   ctx.fillText(opts.row.timeStr, innerX + innerW / 2, timeY);
 
-  const sub = `${opts.section.memberCount} ${HERO_SUB_WORD[opts.section.key] || "active"}`;
+  // Subtitle reflects the HERO ROW's member count, not the section-wide total
+  // (which sums all unique members across every row in the section and would
+  // mislead — e.g. "7 in lobby" on a single game that only one person plays).
+  const heroMemberCount = opts.row.memberNames?.length || 0;
+  const sub = `${heroMemberCount} ${HERO_SUB_WORD[opts.section.key] || "active"}`;
   ctx.font = `${12 * SCALE}px UI`;
   ctx.fillStyle = PALETTE.usersMuted;
   ctx.fillText(sub, innerX + innerW / 2, timeY + 18 * SCALE);
@@ -831,7 +853,7 @@ function drawSmallTile(ctx, x, y, w, h, opts) {
   const labelY = y + 18 * SCALE;
   ctx.font = `bold ${10 * SCALE}px UI Bold`;
   ctx.fillStyle = PALETTE.usersMuted;
-  ctx.fillText(`${opts.section.emoji} ${opts.section.title.toUpperCase()}`, innerX, labelY);
+  ctx.fillText(opts.section.title.toUpperCase(), innerX, labelY);
 
   ctx.textAlign = "right";
   ctx.fillStyle = PALETTE.usersText;
@@ -887,13 +909,16 @@ function drawOverflowRow(ctx, x, y, w, h, entry) {
   const cy = y + h / 2;
   ctx.textBaseline = "middle";
 
-  // Section emoji in the left gutter.
+  // First letter of the activity name in the left gutter (matches the hero
+  // tile's icon-block treatment). Replaces a section emoji that didn't
+  // render on the Docker image's font stack.
   const iconGutter = 22 * SCALE;
   const iconX = x + 14 * SCALE;
+  const initial = (row.display || "?").trim().charAt(0).toUpperCase() || "?";
   ctx.textAlign = "center";
-  ctx.font = `${14 * SCALE}px UI`;
+  ctx.font = `bold ${13 * SCALE}px UI Bold`;
   ctx.fillStyle = PALETTE.usersMuted;
-  ctx.fillText(section.emoji, iconX + iconGutter / 2, cy);
+  ctx.fillText(initial, iconX + iconGutter / 2, cy);
 
   // Right-aligned time first so we know how much room is left for name+members.
   ctx.textAlign = "right";

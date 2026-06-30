@@ -1,4 +1,4 @@
-# WAV Bot — 10.10.1 (live activity overflow panel + small-tile overlap fix)
+# WAV Bot — 10.10.2 (leader selection fix + emoji glyph fallback)
 
 10.0 adds an owner-only Role Doctor plus activity aliases so mismatched
 presence names can resolve to the right premade role instead of creating
@@ -17,6 +17,35 @@ A separate desktop console at `../wav-bot-console/` ships in tandem
 (v0.1 released same day as bot 10.6.0) — a Windows Electron app that
 polls the `/api/activity` panel endpoint and renders a live native
 view of guild activity with optional toast notifications.
+
+## 10.10.2
+
+Two visible problems on the deployed bento panel.
+
+- **Hero now picks the loudest single activity.** `selectLeader` was
+  comparing `section.memberCount` — the unique-member total across every
+  row in the section. So a Playing section with five different games
+  totaling 7 unique people beat a Voice section with 3 people in a
+  single channel, even though the hero would only render ONE row. The
+  comparison is now `section.rows[0].memberNames.length`, which is the
+  member count of the row that will actually become the hero.
+- **Hero subtitle matches.** Same fix for the `"N in lobby"` / `"N in
+  channel"` caption — it now reads the hero row's member count, not
+  the section total.
+- **Emoji glyphs replaced with letters.** The DejaVu fonts shipped in
+  the Fly Docker image don't carry color emoji, so `🎮 🎤 🎵 📺 ▸` all
+  rendered as tofu squares. Replaced throughout: hero tile's icon block
+  now shows the first letter of the activity name (big, bold), small
+  tile labels drop the emoji prefix and just read `PLAYING` / `VOICE`
+  / `LISTENING` / `WATCHING` / `OTHER`, overflow rows show the first
+  letter of each activity in the left gutter, and the hero label drops
+  the leading `▸` triangle. Future option: swap the hero icon for the
+  Discord role icon when one is configured.
+- `src/stats-image.js`: `selectLeader` rewritten via a new
+  `topRowMemberCount(section)` helper. `drawHeroTile`, `drawSmallTile`,
+  and `drawOverflowRow` updated per above. `tests/stats-image.test.js`:
+  `selectLeader` tests rewritten to use the new comparison and a new
+  test covers the "section with no rows" edge case.
 
 ## 10.10.1
 

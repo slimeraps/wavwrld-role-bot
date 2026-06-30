@@ -47,22 +47,34 @@ test("selectLeader returns null for empty input", () => {
   assert.equal(stats.__selectLeader(undefined), null);
 });
 
+// Helper for the leader tests below — selectLeader now compares the top
+// row's memberNames length, not section-wide totals.
+function sec(key, topRowMembers) {
+  return { key, rows: [{ memberNames: Array(topRowMembers).fill("x") }] };
+}
+
 test("selectLeader returns the single section when only one", () => {
-  const only = { key: "playing", memberCount: 2 };
+  const only = sec("playing", 2);
   assert.equal(stats.__selectLeader([only]), only);
 });
 
-test("selectLeader picks the section with the highest memberCount", () => {
-  const a = { key: "playing",   memberCount: 3 };
-  const b = { key: "voice",     memberCount: 8 };
-  const c = { key: "listening", memberCount: 1 };
+test("selectLeader picks the section whose top row has the most members", () => {
+  const a = sec("playing",   3);
+  const b = sec("voice",     8);
+  const c = sec("listening", 1);
   assert.equal(stats.__selectLeader([a, b, c]), b);
 });
 
 test("selectLeader ties break to the earliest section in input order", () => {
-  const a = { key: "playing", memberCount: 4 };
-  const b = { key: "voice",   memberCount: 4 };
+  const a = sec("playing", 4);
+  const b = sec("voice",   4);
   assert.equal(stats.__selectLeader([a, b]), a);
+});
+
+test("selectLeader handles sections with no rows (treats as 0 members)", () => {
+  const a = { key: "playing", rows: [] };
+  const b = sec("voice", 1);
+  assert.equal(stats.__selectLeader([a, b]), b);
 });
 
 test("computeBentoGrid with 0 small tiles → hero fills the rect", () => {
