@@ -312,6 +312,20 @@ function userTotals(guildId, type, period) {
     .sort((a, b) => b.minutes - a.minutes);
 }
 
+// Zero out a single rolling bucket (daily/weekly/monthly) and reset its window
+// start to now. Open sessions are left running — when they close they credit
+// elapsed minutes into the freshly-zeroed bucket, matching the natural rollover
+// behavior in checkResets().
+function resetPeriod(guildId, period) {
+  if (!PERIODS.includes(period) || period === "lifetime") {
+    throw new Error(`resetPeriod: invalid period "${period}"`);
+  }
+  ensureGuildBuckets(guildId);
+  for (const type of TYPES) playtime[guildId][type][period] = {};
+  if (period !== "lifetime") playtimeResets[guildId][period] = Date.now();
+  scheduleSave();
+}
+
 function getVoiceChannelName(guildId, channelId) {
   return voiceChannelNames[guildId]?.[channelId] || null;
 }
@@ -331,6 +345,7 @@ module.exports = {
   leaderboard,
   userTotals,
   getResets,
+  resetPeriod,
   getVoiceChannelName,
   rememberVoiceChannelName,
   closeStaleRawSessions,

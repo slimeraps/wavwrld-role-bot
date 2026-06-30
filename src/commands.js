@@ -4,6 +4,8 @@ const { sendMonitoring } = require("./monitoring");
 const { handleCleanupCmd, cleanupAndResync } = require("./cleanup");
 const m = require("./music");
 const { statsCmd, statsTestCmd } = require("./stats");
+const tracker = require("./tracker");
+const { flushPendingSave } = require("./state");
 const { doctorCmd } = require("./doctor");
 const { unknownCmd } = require("./unknown");
 
@@ -97,6 +99,32 @@ async function premadeCmd(ctx) {
   await sendMonitoring(`🔁 **Manual toggle** – \`onlyUsePremadeRoles\` changed to **${newValue}** by ${ctx.author.tag}`);
   await cleanupAndResync();
   await ctx.followUp(`✅ Resync finished. Role assignments now follow \`onlyUsePremadeRoles = ${newValue}\`.`);
+}
+
+const PERIOD_ALIASES = {
+  day: "daily", daily: "daily",
+  week: "weekly", weekly: "weekly",
+  month: "monthly", monthly: "monthly",
+  "30d": "monthly", "30day": "monthly", "30days": "monthly",
+};
+
+async function resetStatsCmd(ctx, { period }) {
+  const normalized = PERIOD_ALIASES[String(period || "month").toLowerCase()];
+  if (!normalized) {
+    await ctx.reply("❌ Usage: `!resetstats <day|week|month>` (default: month)");
+    return;
+  }
+  if (!ctx.guild) {
+    await ctx.reply("❌ This command must be run in a server.");
+    return;
+  }
+  tracker.resetPeriod(ctx.guild.id, normalized);
+  flushPendingSave();
+  const label = normalized === "monthly" ? "rolling 30-day"
+    : normalized === "weekly" ? "rolling 7-day"
+    : "rolling 24-hour";
+  await ctx.reply(`✅ Cleared ${label} voice + game tracking for **${ctx.guild.name}**. Window restarts now.`);
+  await sendMonitoring(`🧹 **Stats reset** — \`${normalized}\` cleared by ${ctx.author.tag} in **${ctx.guild.name}**`);
 }
 
 const COMMANDS = [
@@ -212,6 +240,27 @@ const COMMANDS = [
     parseText: (args) => ({ action: String(args[0] || "list").toLowerCase() }),
     parseSlash: (i) => ({ action: i.options.getString("action") || "list" }),
     handler: unknownCmd,
+  },
+  {
+    name: "resetstats",
+    description: "Owner-only: clear rolling tracking (default: 30-day)",
+    needsOwner: true,
+    options: [
+      {
+        name: "period",
+        type: ApplicationCommandOptionType.String,
+        required: false,
+        description: "Which window to clear",
+        choices: [
+          { name: "30 days (default)", value: "month" },
+          { name: "7 days", value: "week" },
+          { name: "24 hours", value: "day" },
+        ],
+      },
+    ],
+    parseText: (args) => ({ period: args[0] || "month" }),
+    parseSlash: (i) => ({ period: i.options.getString("period") || "month" }),
+    handler: resetStatsCmd,
   },
   {
     name: "premade",

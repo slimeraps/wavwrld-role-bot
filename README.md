@@ -1,4 +1,4 @@
-# WAV Bot — 10.10.2 (leader selection fix + emoji glyph fallback)
+# WAV Bot — 10.11.0 (owner stats reset command + Modrinth blacklist)
 
 10.0 adds an owner-only Role Doctor plus activity aliases so mismatched
 presence names can resolve to the right premade role instead of creating
@@ -17,6 +17,30 @@ A separate desktop console at `../wav-bot-console/` ships in tandem
 (v0.1 released same day as bot 10.6.0) — a Windows Electron app that
 polls the `/api/activity` panel endpoint and renders a live native
 view of guild activity with optional toast notifications.
+
+## 10.11.0
+
+Adds an owner-only command to clear a rolling stats window on demand
+(previously the only way was to wait out the natural rollover or hand-edit
+`roles.json` on the Fly volume), plus a small activity blacklist addition.
+
+- **`!resetstats [day|week|month]` / `/resetstats`** — owner-only. Zeroes
+  the voice + game minute buckets for the chosen rolling window and bumps
+  the window start to now. Default is `month` (the 30-day window that
+  feeds `!stats`). Daily, weekly, lifetime, and history snapshots are
+  untouched. Open voice/game sessions keep ticking and credit their full
+  duration into the freshly-zeroed bucket when they close — same behavior
+  as the natural monthly rollover.
+- **Modrinth added to `activityBlacklist`.** The Modrinth launcher
+  presence was leaking into game tracking; blacklisting it keeps it out of
+  the leaderboard and stops it from spawning an Unknown Activity Inbox
+  entry.
+- `src/tracker.js`: new `resetPeriod(guildId, period)` clears
+  `playtime[guildId][type][period]` for both `voice` and `game`, bumps
+  `playtimeResets[guildId][period]`, and schedules a save.
+  `src/commands.js`: new `resetStatsCmd` + command registration with text
+  aliases (`30d`, `30day`, `30days` → `monthly`) and slash choices.
+  `config.json`: `Modrinth` appended to `activityBlacklist`.
 
 ## 10.10.2
 

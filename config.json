@@ -21,6 +21,7 @@
     "Escape from Tarkov": "DISCORD_ROLE_ID"
   },
   "activityBlacklist": [
-    "Fall Guys"
+    "Fall Guys",
+    "Modrinth"
   ]
 }
