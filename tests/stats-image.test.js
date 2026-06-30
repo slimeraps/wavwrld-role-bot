@@ -216,3 +216,35 @@ test("drawLeaderboardRow draws rank, name, time and a relative bar", () => {
   const fills = calls.filter((c) => c[0] === "fill");
   assert.ok(fills.length >= 2, `expected ≥2 fill calls for bar, got ${fills.length}`);
 });
+
+test("drawOverflowPanel draws header and one row per overflow entry", () => {
+  const { ctx, calls } = makeStubCtx();
+  stats.__drawOverflowPanel(ctx, 0, 0, 1800, [
+    {
+      section: { key: "playing", emoji: "🎮", title: "Playing" },
+      row: { display: "Valorant", timeStr: "8m", memberNames: ["alex"] },
+    },
+    {
+      section: { key: "voice", emoji: "🎤", title: "Voice" },
+      row: { display: "AFK Channel", timeStr: "8m", memberNames: ["tom"] },
+    },
+    {
+      section: { key: "listening", emoji: "🎵", title: "Listening" },
+      row: { display: "YouTube Music", timeStr: "12m", memberNames: ["sarah"] },
+    },
+  ]);
+  const texts = calls.filter((c) => c[0] === "fillText").map((c) => c[1]);
+  assert.ok(texts.includes("ALSO HAPPENING"), `expected header, got ${JSON.stringify(texts)}`);
+  assert.ok(texts.some((t) => t.includes("Valorant")));
+  assert.ok(texts.some((t) => t.includes("AFK")));
+  assert.ok(texts.some((t) => t.includes("YouTube")));
+  // Voice row uses green time color.
+  const fills = calls.filter((c) => c[0] === "fillStyle").map((c) => c[1]);
+  assert.ok(fills.includes("#b8e3a1"), "voice row uses green time");
+});
+
+test("drawOverflowPanel renders nothing for empty overflow", () => {
+  const { ctx, calls } = makeStubCtx();
+  stats.__drawOverflowPanel(ctx, 0, 0, 1800, []);
+  assert.equal(calls.length, 0, "no draw calls for empty overflow");
+});

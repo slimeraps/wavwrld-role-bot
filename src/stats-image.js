@@ -837,15 +837,27 @@ function drawSmallTile(ctx, x, y, w, h, opts) {
   ctx.fillStyle = PALETTE.usersText;
   ctx.fillText(String(opts.section.memberCount), innerX + innerW, labelY);
 
-  // Activity name.
-  ctx.textAlign = "left";
-  const nameFont = `bold ${15 * SCALE}px UI Bold`;
-  const nameText = truncate(ctx, opts.row.display, innerW, nameFont);
-  ctx.font = nameFont;
-  ctx.fillStyle = PALETTE.usersText;
-  ctx.fillText(nameText, innerX, y + 42 * SCALE);
+  // Name + time on the same row. Time is right-aligned; the name truncates
+  // to fit the leftover width. Same 15*SCALE font for both so they share a
+  // baseline; the time is colored (blue / green) rather than bumped in size.
+  const rowFont = `bold ${15 * SCALE}px UI Bold`;
+  const rowY = y + 44 * SCALE;
+  ctx.font = rowFont;
+  const timeStr = opts.row.timeStr || "";
+  const timeWidth = ctx.measureText(timeStr).width;
 
-  // Members line.
+  ctx.textAlign = "right";
+  ctx.fillStyle = timeColor;
+  ctx.fillText(timeStr, innerX + innerW, rowY);
+
+  ctx.textAlign = "left";
+  const nameMaxW = Math.max(0, innerW - timeWidth - 8 * SCALE);
+  const nameText = truncate(ctx, opts.row.display, nameMaxW, rowFont);
+  ctx.font = rowFont;
+  ctx.fillStyle = PALETTE.usersText;
+  ctx.fillText(nameText, innerX, rowY);
+
+  // Members line below the name+time row.
   const memberLabel = (() => {
     const names = opts.row.memberNames || [];
     const shown = names.slice(0, 3);
@@ -858,17 +870,114 @@ function drawSmallTile(ctx, x, y, w, h, opts) {
     const memberText = truncate(ctx, memberLabel, innerW, memberFont);
     ctx.font = memberFont;
     ctx.fillStyle = PALETTE.usersMuted;
-    ctx.fillText(memberText, innerX, y + 58 * SCALE);
+    ctx.fillText(memberText, innerX, y + 62 * SCALE);
   }
-
-  // Time.
-  ctx.font = `bold ${17 * SCALE}px UI Bold`;
-  ctx.fillStyle = timeColor;
-  ctx.fillText(opts.row.timeStr, innerX, y + h - 18 * SCALE);
 
   // Bottom bar.
   const barValue = opts.barScale > 0 ? opts.row.minutes / opts.barScale : 0;
   drawTileBar(ctx, x, y, w, h, barValue, isVoice ? PALETTE.green : PALETTE.pink);
+}
+
+// One row inside the "ALSO HAPPENING" overflow panel below the bento grid.
+// entry: { section, row } where row is one of section.rows[1..].
+function drawOverflowRow(ctx, x, y, w, h, entry) {
+  const { section, row } = entry;
+  const isVoice = section.key === "voice";
+  const timeColor = isVoice ? PALETTE.green : PALETTE.blue;
+  const cy = y + h / 2;
+  ctx.textBaseline = "middle";
+
+  // Section emoji in the left gutter.
+  const iconGutter = 22 * SCALE;
+  const iconX = x + 14 * SCALE;
+  ctx.textAlign = "center";
+  ctx.font = `${14 * SCALE}px UI`;
+  ctx.fillStyle = PALETTE.usersMuted;
+  ctx.fillText(section.emoji, iconX + iconGutter / 2, cy);
+
+  // Right-aligned time first so we know how much room is left for name+members.
+  ctx.textAlign = "right";
+  ctx.font = `bold ${13 * SCALE}px UI Bold`;
+  ctx.fillStyle = timeColor;
+  const timeStr = row.timeStr || "";
+  const timeRightX = x + w - 14 * SCALE;
+  ctx.fillText(timeStr, timeRightX, cy);
+  const timeW = ctx.measureText(timeStr).width;
+
+  // Middle column: name then members inline.
+  const textX = iconX + iconGutter + 10 * SCALE;
+  const textEndX = timeRightX - timeW - 12 * SCALE;
+  const textW = Math.max(0, textEndX - textX);
+
+  ctx.textAlign = "left";
+  const nameFont = `bold ${13 * SCALE}px UI Bold`;
+  ctx.font = nameFont;
+  const nameWFull = ctx.measureText(row.display).width;
+  const nameMaxW = Math.min(textW, nameWFull);
+  const nameText = truncate(ctx, row.display, nameMaxW, nameFont);
+  ctx.fillStyle = PALETTE.usersText;
+  ctx.fillText(nameText, textX, cy);
+  const nameW = ctx.measureText(nameText).width;
+
+  const memberLabel = (() => {
+    const names = row.memberNames || [];
+    const shown = names.slice(0, 2);
+    const more = names.length - shown.length;
+    if (shown.length === 0) return "";
+    return ` ${shown.join(", ")}${more > 0 ? ` +${more}` : ""}`;
+  })();
+  if (memberLabel) {
+    const memberFont = `${11 * SCALE}px UI`;
+    const memberW = Math.max(0, textW - nameW);
+    const memberText = truncate(ctx, memberLabel, memberW, memberFont);
+    ctx.font = memberFont;
+    ctx.fillStyle = PALETTE.usersMuted;
+    ctx.fillText(memberText, textX + nameW, cy);
+  }
+}
+
+// Overflow panel below the bento grid. Lists every section row at index ≥1
+// (i.e. every row that the bento grid skipped). One row per entry, no cap.
+// Caller supplies x, y, w; height is computed by caller via overflowPanelHeight.
+function drawOverflowPanel(ctx, x, y, w, overflow) {
+  if (!overflow || overflow.length === 0) return;
+  const headerH = 28 * SCALE;
+  const rowH = 28 * SCALE;
+  const bottomPad = 8 * SCALE;
+  const totalH = headerH + rowH * overflow.length + bottomPad;
+
+  drawTileChrome(ctx, x, y, w, totalH, PALETTE.tileBg);
+
+  // Header.
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+  ctx.font = `bold ${10 * SCALE}px UI Bold`;
+  ctx.fillStyle = PALETTE.usersMuted;
+  ctx.fillText("ALSO HAPPENING", x + 14 * SCALE, y + 18 * SCALE);
+
+  // Rows with hairline dividers.
+  overflow.forEach((entry, i) => {
+    const rowY = y + headerH + rowH * i;
+    drawOverflowRow(ctx, x, rowY, w, rowH, entry);
+    if (i < overflow.length - 1) {
+      ctx.strokeStyle = "rgba(255,255,255,0.04)";
+      ctx.lineWidth = 1 * SCALE;
+      ctx.beginPath();
+      ctx.moveTo(x + 14 * SCALE, rowY + rowH);
+      ctx.lineTo(x + w - 14 * SCALE, rowY + rowH);
+      ctx.stroke();
+    }
+  });
+}
+
+// Total panel height for `overflow.length` rows. Returns 0 for empty input
+// so the caller can omit the panel entirely.
+function overflowPanelHeight(overflow) {
+  if (!overflow || overflow.length === 0) return 0;
+  const headerH = 28 * SCALE;
+  const rowH = 28 * SCALE;
+  const bottomPad = 8 * SCALE;
+  return headerH + rowH * overflow.length + bottomPad;
 }
 
 async function renderLiveActivity({ guildName, totalActive, sections }) {
@@ -881,7 +990,23 @@ async function renderLiveActivity({ guildName, totalActive, sections }) {
   const HERO_H = 232 * SCALE;
 
   const hasContent = Array.isArray(sections) && sections.length > 0;
-  const bodyH = hasContent ? HERO_H : EMPTY_PANEL_H;
+
+  // Compute overflow up front so we can size the canvas.
+  // Every row at index ≥1 from every section is overflow — both the leader's
+  // dropped rows and every other section's non-top rows.
+  const overflow = [];
+  if (hasContent) {
+    for (const section of sections) {
+      for (let i = 1; i < section.rows.length; i += 1) {
+        overflow.push({ section, row: section.rows[i] });
+      }
+    }
+  }
+  const overflowH = overflowPanelHeight(overflow);
+
+  const bodyH = hasContent
+    ? HERO_H + (overflowH > 0 ? GAP + overflowH : 0)
+    : EMPTY_PANEL_H;
   const height = PAD + HEADER_H + GAP + bodyH + PAD;
 
   const canvas = createCanvas(W, height);
@@ -974,6 +1099,11 @@ async function renderLiveActivity({ guildName, totalActive, sections }) {
       { section, row: topRow, barScale },
     );
   });
+
+  // Overflow panel below the bento — every dropped row.
+  if (overflowH > 0) {
+    drawOverflowPanel(ctx, PAD, y + HERO_H + GAP, innerW, overflow);
+  }
 
   return canvas.toBuffer("image/jpeg");
 }
@@ -1123,4 +1253,5 @@ module.exports = {
   __drawMemberHeroTile: drawMemberHeroTile,
   __drawMemberPodiumTile: drawMemberPodiumTile,
   __drawLeaderboardRow: drawLeaderboardRow,
+  __drawOverflowPanel: drawOverflowPanel,
 };
