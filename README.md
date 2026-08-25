@@ -1,4 +1,4 @@
-# WAV Bot — 10.11.0 (owner stats reset command + Modrinth blacklist)
+# WAV Bot — 10.12.0 (idle drops game roles + Modrinth aliased to Minecraft)
 
 10.0 adds an owner-only Role Doctor plus activity aliases so mismatched
 presence names can resolve to the right premade role instead of creating
@@ -17,6 +17,25 @@ A separate desktop console at `../wav-bot-console/` ships in tandem
 (v0.1 released same day as bot 10.6.0) — a Windows Electron app that
 polls the `/api/activity` panel endpoint and renders a live native
 view of guild activity with optional toast notifications.
+
+## 10.12.0
+
+Idle members no longer hold on to game-activity roles, plus a Modrinth
+handling reversal.
+
+- **Idle status drops game roles.** `handlePresence` now treats a member's
+  activities as empty while their Discord status is `idle` (Discord keeps
+  reporting the activity itself even when idle), so `Playing X` — and the
+  premade-role / fallback-role equivalents — get stripped through the
+  existing end-of-function removal pass, same as if they'd stopped
+  playing. `dnd` and `online` are unaffected; only `idle` triggers it.
+- **Modrinth aliased to Minecraft instead of blacklisted.** Modrinth is a
+  Minecraft mod launcher, so its presence now maps onto the Minecraft
+  role/leaderboard via `activityAliases` rather than being ignored
+  entirely. Reverses the 10.11.0 blacklist entry.
+- `src/presence.js`: new `isIdle` check gates the activity loop.
+  `config.json`: `Modrinth` moved from `activityBlacklist` to
+  `activityAliases` (→ `Minecraft`).
 
 ## 10.11.0
 

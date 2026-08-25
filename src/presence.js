@@ -33,7 +33,13 @@ async function handlePresence(presence) {
   const currentTargetRoleNames = new Set();
   let hasUnmatchedActivity = false;
 
-  for (const activity of presence.activities) {
+  // Discord keeps reporting activities while a member is idle, but we only want
+  // "Playing X" (and the premade/fallback equivalents) held while actually online
+  // or dnd. Treating idle as "no activities" here lets the existing removal pass
+  // below strip whatever role(s) the member currently holds.
+  const isIdle = presence.status === "idle";
+
+  for (const activity of isIdle ? [] : presence.activities) {
     if (!activity?.name) continue;
 
     // Collapse Discord's "<Game> with Medal" variant onto the base game name

@@ -15,13 +15,13 @@
     "Escape from Tarkov": "Playing Tarkov"
   },
   "activityAliases": {
-    "GitHub": "Playing Github"
+    "GitHub": "Playing Github",
+    "Modrinth": "Minecraft"
   },
   "premadeRoleIds": {
     "Escape from Tarkov": "DISCORD_ROLE_ID"
   },
   "activityBlacklist": [
-    "Fall Guys",
-    "Modrinth"
+    "Fall Guys"
   ]
 }
