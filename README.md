@@ -18,6 +18,200 @@ A separate desktop console at `../wav-bot-console/` ships in tandem
 polls the `/api/activity` panel endpoint and renders a live native
 view of guild activity with optional toast notifications.
 
+## What this bot does
+
+WAV Bot is a multi-purpose Discord bot for a single guild that does four
+things at once: it auto-assigns roles based on what people are playing, it
+tracks voice + game time per member, it exposes that activity through a
+live embed and an HTTP panel, and it runs a YouTube / Spotify / SoundCloud
+music player. Everything below is keyed off `config.json` plus a few env
+vars (`DISCORD_TOKEN`, `STATS_CHANNEL_ID`, `PANEL_TOKEN`, `PANEL_PORT`,
+`PANEL_GUILD_ID`, `DATA_DIR`). The bot persists state to `roles.json` in
+`DATA_DIR` so role mappings, tracker history, and the stats embed message
+ID survive restarts.
+
+### Game activity → roles
+
+When a member starts a game, the presence handler in
+[src/presence.js](src/presence.js) maps the game name to a Discord role
+and assigns it. When they stop, the role is removed. Two modes:
+
+- **Auto-managed mode** (`onlyUsePremadeRoles: false`) — the bot creates
+  a new role on the fly the first time it sees a game, names it
+  `Playing <Game>`, and tracks it in the `autoManaged` set. Empty
+  bot-created roles are deleted by the cleanup pass.
+- **Premade-only mode** (`onlyUsePremadeRoles: true`) — only roles
+  explicitly listed in `config.premadeRoleIds` (a `{ "Game Name":
+  "roleId" }` map) get assigned. Unknown games are ignored.
+
+Toggle modes at runtime with `/premade` (owner only) — it flips the
+config flag, persists it, and runs a full cleanup + resync.
+
+`config.activityAliases` can normalize presence names before this lookup.
+That is useful when Discord reports a different spelling/casing than the
+role config, such as `GitHub` vs `Github`.
+
+Unmapped activities are recorded in the Unknown Activity Inbox, available
+with `/unknown` or `!unknown` for the owner. Use `/unknown action:clear`
+after mapping or blacklisting the entries you care about.
+
+### Voice channel roles
+
+[src/voice.js](src/voice.js) gives each voice channel its own role. When a
+member joins a VC, they get the matching role; when they leave, it's
+removed. Channel renames and deletes are mirrored to the role. The map
+lives at `config.voiceChannelRoles[guildId]` (`{ "channelId": "roleId" }`).
+Voice roles are registered in `autoManaged` so the presence loop knows not
+to strip them off when game roles change (this was the 9.7.2 fix).
+
+### Activity tracking
+
+[src/tracker.js](src/tracker.js) records per-member sessions for both
+voice channels and game roles. Sessions are bucketed into daily / weekly /
+monthly (30-day rolling) / lifetime totals, with auto-resets at the
+appropriate boundaries. Open sessions are reopened on restart from
+persisted state, so bot restarts don't lose ongoing time. This data backs
+both the `/stats` image and the live activity embed.
+
+### Live activity embed (stats channel)
+
+[src/stats-channel.js](src/stats-channel.js) maintains a single auto-
+updating embed in the channel set by `STATS_CHANNEL_ID` (env, preferred)
+or `config.statsChannelId`. Updates every 15 seconds, sectioned by
+category (🎮 Playing / 🎤 Voice / 🎵 Listening / 📺 Watching / 🟣 Other),
+each row showing time, role name, member count, and up to 3 names. The
+message ID is persisted; if the message gets deleted, a new one is posted
+on the next tick. A hash check skips the API edit when nothing changed.
+
+No command needed — just point `STATS_CHANNEL_ID` at any channel the bot
+can post in.
+
+### HTTP panel
+
+[src/panel.js](src/panel.js) serves a token-gated web view of the same
+activity data on `PANEL_PORT` (default 8080). Open
+`http://host:port/?key=PANEL_TOKEN`. Polls `/api/activity` every 5
+seconds. `PANEL_GUILD_ID` pins it to a specific guild. `/healthz` is open
+for uptime checks. The page mirrors the Discord embed's grouping so the
+two stay in sync.
+
+### `/stats` leaderboard
+
+`/stats` (or `!stats`, `!leaderboard`, `!lb`) renders a PNG dashboard via
+[src/stats-image.js](src/stats-image.js): 30-day "Top Members" view with
+voice + game time per member and the top game played in the window. Open
+to everyone, no VIP gate. The render uses `@napi-rs/canvas` with bundled
+DejaVu + Noto Color Emoji fonts so it works on slim Linux containers.
+
+### Music player
+
+VIP-gated music in [src/music.js](src/music.js). All commands work as
+both `/cmd` and `!cmd`, and require the role in `config.vipRoleId`. The
+user must be in a voice channel — the bot follows whoever ran the
+command.
+
+| Command | Aliases | What it does |
+|---|---|---|
+| `play <url-or-search>` | `p` | Joins your VC and queues a track. URLs play directly; text searches with multiple matches show a 3-option reaction picker. |
+| `pause` / `resume` | — | Pause / resume the current track. |
+| `skip` | `s` | Skip the current track. |
+| `stop` | `leave` | Stop playback, clear the queue, leave VC. |
+| `queue` | `q` | List the upcoming queue (first 10). |
+| `nowplaying` | `np` | Current track + progress bar. |
+| `volume [0-200]` | `vol` | Set or show volume; saves as the server default. |
+
+Spotify links work by reading title/artist via Spotify's metadata API and
+playing the YouTube equivalent — Spotify doesn't allow third-party
+streaming. SoundCloud and direct YouTube URLs play natively. The bot
+auto-leaves after 60 seconds of empty queue or empty voice channel.
+
+### VIP role promotion
+
+[src/promotion.js](src/promotion.js) bumps the VIP role to the top of
+the role list whenever it's used as a managed role, and restores its
+original position when no longer needed. Original positions for premade
+roles are remembered in `originalPositions` so the bot can put them back
+exactly where they were.
+
+### Cleanup and hourly maintenance
+
+[src/cleanup.js](src/cleanup.js) provides `/cleanup` (owner only) which
+strips members from bot-managed roles, deletes empty bot-created roles,
+and resyncs everyone against current presence. The same cleanup runs
+automatically once per hour, followed by a state flush and a clean
+process exit so Fly's `restart = "always"` policy brings the machine
+back up — see 9.6.3 for the rationale. Persistent state in `roles.json`
+(tracker history, open sessions, stats embed message ID) is preserved
+across cleanup so memory survives the restart.
+
+### Commands at a glance
+
+| Command | Who | What |
+|---|---|---|
+| `/help` (`!help`, `!h`) | everyone | Print the public command reference. |
+| `/stats` (`!stats`, `!leaderboard`, `!lb`) | everyone | 30-day leaderboard PNG. |
+| `/play`, `/skip`, `/pause`, `/resume`, `/stop`, `/queue`, `/nowplaying`, `/volume` | VIP role | Music player. |
+| `/cleanup` | owner | Full resync of all managed roles. |
+| `/doctor` | owner | Audit duplicate/stale role state; `fix:true` repairs safe items. |
+| `/unknown` | owner | Show unmapped observed activities; `action:clear` clears the inbox. |
+| `/premade` | owner | Toggle `onlyUsePremadeRoles` and resync. |
+
+Owner is `config.ownerId`; VIP role is `config.vipRoleId`. Owner-only
+commands are deliberately omitted from `/help`.
+
+### Configuration cheatsheet
+
+`config.json` (committed defaults) keys actually read by the code:
+
+- `token` — Discord bot token (overridden by `DISCORD_TOKEN` env).
+- `ownerId` — user ID for owner-only commands.
+- `vipRoleId` — role ID required for music commands.
+- `monitoringChannelId` — channel for bot-action audit messages.
+- `statsChannelId` — channel for the live activity embed (overridden by
+  `STATS_CHANNEL_ID`).
+- `premadeRoleIds` — `{ gameName: roleId }` map of curated game roles.
+- `activityAliases` — `{ observedActivityName: canonicalName }` map for
+  spelling/casing aliases before role lookup.
+- `voiceChannelRoles` — `{ guildId: { channelId: roleId } }` map for VC
+  mirroring.
+- `onlyUsePremadeRoles` — boolean; flipped by `/premade`.
+- `dryRun` — log role/promotion actions without applying them.
+
+Env vars: `DISCORD_TOKEN`, `STATS_CHANNEL_ID`, `PANEL_TOKEN`, `PANEL_PORT`
+(default 8080), `PANEL_GUILD_ID`, `DATA_DIR` (default repo root).
+
+
+## Code layout (8.4)
+
+- `bot.js` — entry point: loads modules, wires events, starts the panel,
+  starts intervals, logs in
+- `src/config.js` — config loading, paths, env-var token, `persistConfig()`
+- `src/state.js` — in-memory state (`roleMap`, `autoManaged`, `promotedRoles`,
+  `originalPositions`, `guildVolumes`, `voiceChannelRoles`, `activityStats`,
+  `statsResetTimes`) + `saveData()` / load from `roles.json`
+- `src/client.js` — single shared `Client` instance with the right intents
+- `src/util.js` — pure helpers (`sleep`, `stripTimerPrefix`,
+  `voiceRoleNameForChannel`, name resolution)
+- `src/monitoring.js` — `sendMonitoring()` for the monitoring channel
+- `src/timers.js` — role-timer logic (`[Nm]` prefix updates, throttling)
+- `src/promotion.js` — VIP role promotion / demotion
+- `src/presence.js` — `handlePresence()` (game → role mapping; calls
+  `logActivity()` when a role is assigned)
+- `src/voice.js` — voice channel role lifecycle (create / rename / delete /
+  reposition)
+- `src/cleanup.js` — `cleanup` and `premade` resync logic; also drops orphan
+  voice roles
+- `src/doctor.js` — owner-only role audit and safe repair helpers
+- `src/unknown.js` — Unknown Activity Inbox recorder and owner command
+- `src/music.js` — music player init, queue commands, reaction picker
+- `src/stats.js` — `logActivity()` counters and the `/stats` embed
+- `src/panel.js` — token-gated HTTP server with `/api/members` snapshot
+- `src/commands.js` — central command registry, slash registration, ctx
+  abstraction, VIP/owner gates
+- `src/events.js` — all `client.on(...)` registrations
+
+## Changelog
+
 ## 10.12.0
 
 Idle members no longer hold on to game-activity roles, plus a Modrinth
@@ -960,195 +1154,3 @@ an older discord.js, 10.2.0 sidesteps the entire class of bug:
 - `ensureGuildBuckets()` is now idempotent for existing data — it adds
   the new `monthly` reset/playtime entries lazily so the schema migrates
   without a manual step.
-
-## What this bot does
-
-WAV Bot is a multi-purpose Discord bot for a single guild that does four
-things at once: it auto-assigns roles based on what people are playing, it
-tracks voice + game time per member, it exposes that activity through a
-live embed and an HTTP panel, and it runs a YouTube / Spotify / SoundCloud
-music player. Everything below is keyed off `config.json` plus a few env
-vars (`DISCORD_TOKEN`, `STATS_CHANNEL_ID`, `PANEL_TOKEN`, `PANEL_PORT`,
-`PANEL_GUILD_ID`, `DATA_DIR`). The bot persists state to `roles.json` in
-`DATA_DIR` so role mappings, tracker history, and the stats embed message
-ID survive restarts.
-
-### Game activity → roles
-
-When a member starts a game, the presence handler in
-[src/presence.js](src/presence.js) maps the game name to a Discord role
-and assigns it. When they stop, the role is removed. Two modes:
-
-- **Auto-managed mode** (`onlyUsePremadeRoles: false`) — the bot creates
-  a new role on the fly the first time it sees a game, names it
-  `Playing <Game>`, and tracks it in the `autoManaged` set. Empty
-  bot-created roles are deleted by the cleanup pass.
-- **Premade-only mode** (`onlyUsePremadeRoles: true`) — only roles
-  explicitly listed in `config.premadeRoleIds` (a `{ "Game Name":
-  "roleId" }` map) get assigned. Unknown games are ignored.
-
-Toggle modes at runtime with `/premade` (owner only) — it flips the
-config flag, persists it, and runs a full cleanup + resync.
-
-`config.activityAliases` can normalize presence names before this lookup.
-That is useful when Discord reports a different spelling/casing than the
-role config, such as `GitHub` vs `Github`.
-
-Unmapped activities are recorded in the Unknown Activity Inbox, available
-with `/unknown` or `!unknown` for the owner. Use `/unknown action:clear`
-after mapping or blacklisting the entries you care about.
-
-### Voice channel roles
-
-[src/voice.js](src/voice.js) gives each voice channel its own role. When a
-member joins a VC, they get the matching role; when they leave, it's
-removed. Channel renames and deletes are mirrored to the role. The map
-lives at `config.voiceChannelRoles[guildId]` (`{ "channelId": "roleId" }`).
-Voice roles are registered in `autoManaged` so the presence loop knows not
-to strip them off when game roles change (this was the 9.7.2 fix).
-
-### Activity tracking
-
-[src/tracker.js](src/tracker.js) records per-member sessions for both
-voice channels and game roles. Sessions are bucketed into daily / weekly /
-monthly (30-day rolling) / lifetime totals, with auto-resets at the
-appropriate boundaries. Open sessions are reopened on restart from
-persisted state, so bot restarts don't lose ongoing time. This data backs
-both the `/stats` image and the live activity embed.
-
-### Live activity embed (stats channel)
-
-[src/stats-channel.js](src/stats-channel.js) maintains a single auto-
-updating embed in the channel set by `STATS_CHANNEL_ID` (env, preferred)
-or `config.statsChannelId`. Updates every 15 seconds, sectioned by
-category (🎮 Playing / 🎤 Voice / 🎵 Listening / 📺 Watching / 🟣 Other),
-each row showing time, role name, member count, and up to 3 names. The
-message ID is persisted; if the message gets deleted, a new one is posted
-on the next tick. A hash check skips the API edit when nothing changed.
-
-No command needed — just point `STATS_CHANNEL_ID` at any channel the bot
-can post in.
-
-### HTTP panel
-
-[src/panel.js](src/panel.js) serves a token-gated web view of the same
-activity data on `PANEL_PORT` (default 8080). Open
-`http://host:port/?key=PANEL_TOKEN`. Polls `/api/activity` every 5
-seconds. `PANEL_GUILD_ID` pins it to a specific guild. `/healthz` is open
-for uptime checks. The page mirrors the Discord embed's grouping so the
-two stay in sync.
-
-### `/stats` leaderboard
-
-`/stats` (or `!stats`, `!leaderboard`, `!lb`) renders a PNG dashboard via
-[src/stats-image.js](src/stats-image.js): 30-day "Top Members" view with
-voice + game time per member and the top game played in the window. Open
-to everyone, no VIP gate. The render uses `@napi-rs/canvas` with bundled
-DejaVu + Noto Color Emoji fonts so it works on slim Linux containers.
-
-### Music player
-
-VIP-gated music in [src/music.js](src/music.js). All commands work as
-both `/cmd` and `!cmd`, and require the role in `config.vipRoleId`. The
-user must be in a voice channel — the bot follows whoever ran the
-command.
-
-| Command | Aliases | What it does |
-|---|---|---|
-| `play <url-or-search>` | `p` | Joins your VC and queues a track. URLs play directly; text searches with multiple matches show a 3-option reaction picker. |
-| `pause` / `resume` | — | Pause / resume the current track. |
-| `skip` | `s` | Skip the current track. |
-| `stop` | `leave` | Stop playback, clear the queue, leave VC. |
-| `queue` | `q` | List the upcoming queue (first 10). |
-| `nowplaying` | `np` | Current track + progress bar. |
-| `volume [0-200]` | `vol` | Set or show volume; saves as the server default. |
-
-Spotify links work by reading title/artist via Spotify's metadata API and
-playing the YouTube equivalent — Spotify doesn't allow third-party
-streaming. SoundCloud and direct YouTube URLs play natively. The bot
-auto-leaves after 60 seconds of empty queue or empty voice channel.
-
-### VIP role promotion
-
-[src/promotion.js](src/promotion.js) bumps the VIP role to the top of
-the role list whenever it's used as a managed role, and restores its
-original position when no longer needed. Original positions for premade
-roles are remembered in `originalPositions` so the bot can put them back
-exactly where they were.
-
-### Cleanup and hourly maintenance
-
-[src/cleanup.js](src/cleanup.js) provides `/cleanup` (owner only) which
-strips members from bot-managed roles, deletes empty bot-created roles,
-and resyncs everyone against current presence. The same cleanup runs
-automatically once per hour, followed by a state flush and a clean
-process exit so Fly's `restart = "always"` policy brings the machine
-back up — see 9.6.3 for the rationale. Persistent state in `roles.json`
-(tracker history, open sessions, stats embed message ID) is preserved
-across cleanup so memory survives the restart.
-
-### Commands at a glance
-
-| Command | Who | What |
-|---|---|---|
-| `/help` (`!help`, `!h`) | everyone | Print the public command reference. |
-| `/stats` (`!stats`, `!leaderboard`, `!lb`) | everyone | 30-day leaderboard PNG. |
-| `/play`, `/skip`, `/pause`, `/resume`, `/stop`, `/queue`, `/nowplaying`, `/volume` | VIP role | Music player. |
-| `/cleanup` | owner | Full resync of all managed roles. |
-| `/doctor` | owner | Audit duplicate/stale role state; `fix:true` repairs safe items. |
-| `/unknown` | owner | Show unmapped observed activities; `action:clear` clears the inbox. |
-| `/premade` | owner | Toggle `onlyUsePremadeRoles` and resync. |
-
-Owner is `config.ownerId`; VIP role is `config.vipRoleId`. Owner-only
-commands are deliberately omitted from `/help`.
-
-### Configuration cheatsheet
-
-`config.json` (committed defaults) keys actually read by the code:
-
-- `token` — Discord bot token (overridden by `DISCORD_TOKEN` env).
-- `ownerId` — user ID for owner-only commands.
-- `vipRoleId` — role ID required for music commands.
-- `monitoringChannelId` — channel for bot-action audit messages.
-- `statsChannelId` — channel for the live activity embed (overridden by
-  `STATS_CHANNEL_ID`).
-- `premadeRoleIds` — `{ gameName: roleId }` map of curated game roles.
-- `activityAliases` — `{ observedActivityName: canonicalName }` map for
-  spelling/casing aliases before role lookup.
-- `voiceChannelRoles` — `{ guildId: { channelId: roleId } }` map for VC
-  mirroring.
-- `onlyUsePremadeRoles` — boolean; flipped by `/premade`.
-- `dryRun` — log role/promotion actions without applying them.
-
-Env vars: `DISCORD_TOKEN`, `STATS_CHANNEL_ID`, `PANEL_TOKEN`, `PANEL_PORT`
-(default 8080), `PANEL_GUILD_ID`, `DATA_DIR` (default repo root).
-
-
-## Code layout (8.4)
-
-- `bot.js` — entry point: loads modules, wires events, starts the panel,
-  starts intervals, logs in
-- `src/config.js` — config loading, paths, env-var token, `persistConfig()`
-- `src/state.js` — in-memory state (`roleMap`, `autoManaged`, `promotedRoles`,
-  `originalPositions`, `guildVolumes`, `voiceChannelRoles`, `activityStats`,
-  `statsResetTimes`) + `saveData()` / load from `roles.json`
-- `src/client.js` — single shared `Client` instance with the right intents
-- `src/util.js` — pure helpers (`sleep`, `stripTimerPrefix`,
-  `voiceRoleNameForChannel`, name resolution)
-- `src/monitoring.js` — `sendMonitoring()` for the monitoring channel
-- `src/timers.js` — role-timer logic (`[Nm]` prefix updates, throttling)
-- `src/promotion.js` — VIP role promotion / demotion
-- `src/presence.js` — `handlePresence()` (game → role mapping; calls
-  `logActivity()` when a role is assigned)
-- `src/voice.js` — voice channel role lifecycle (create / rename / delete /
-  reposition)
-- `src/cleanup.js` — `cleanup` and `premade` resync logic; also drops orphan
-  voice roles
-- `src/doctor.js` — owner-only role audit and safe repair helpers
-- `src/unknown.js` — Unknown Activity Inbox recorder and owner command
-- `src/music.js` — music player init, queue commands, reaction picker
-- `src/stats.js` — `logActivity()` counters and the `/stats` embed
-- `src/panel.js` — token-gated HTTP server with `/api/members` snapshot
-- `src/commands.js` — central command registry, slash registration, ctx
-  abstraction, VIP/owner gates
-- `src/events.js` — all `client.on(...)` registrations
