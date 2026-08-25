@@ -160,8 +160,10 @@ function collectSyntheticRows(guild, trackedRows) {
 
     if (section === "playing") {
       // Raw-name sessions flow into the tracker via presence.js — look them up.
+      // Summed (not max) so multiple simultaneous players rank this above a
+      // single longer session, same as the tracked-role path above.
       const memberIds = uniqueMembers.map((m) => m.id);
-      minutes = tracker.activeElapsedMinutes(guild.id, "game", display, memberIds);
+      minutes = tracker.sumActiveElapsedMinutes(guild.id, "game", display, memberIds);
       if (minutes > 0) timeStr = formatTimerMinutes(minutes);
     } else if (section === "listening" || section === "watching" || section === "other") {
       // No tracker persistence for these — compute live from sinceTs.
@@ -214,7 +216,12 @@ function collectRows(guild) {
     const humansArr = [...humans.values()];
     const memberIds = humansArr.map((m) => m.id);
     const source = timerSourceForRole(guildId, roleId, cleanName);
-    const minutes = tracker.activeElapsedMinutes(guildId, source.type, source.key, memberIds);
+    // Games rank by every current player's combined time (see
+    // sumActiveElapsedMinutes); voice channels keep the longest-single-
+    // session reading — "in channel" isn't additive the way "playing" is.
+    const minutes = section === "playing"
+      ? tracker.sumActiveElapsedMinutes(guildId, source.type, source.key, memberIds)
+      : tracker.activeElapsedMinutes(guildId, source.type, source.key, memberIds);
 
     const memberNames = humansArr
       .map((m) => m.displayName || m.user?.username || m.id)

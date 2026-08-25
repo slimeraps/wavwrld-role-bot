@@ -278,80 +278,25 @@ function drawCanvasBackground(ctx, w, h) {
   ctx.fillRect(0, 0, w, h);
 }
 
-// Picks the section with the highest memberCount. Ties resolve to the
-// section that appears first in `sections` (which is LIVE_SECTIONS order
-// because buildLiveActivitySnapshot iterates that array).
-// Top-row member count for a section — the count of people in the activity
-// that will become the hero tile if this section wins. We compare on this
-// (not the section-wide unique-member total) because the hero only ever
-// renders one row, and the user expects "leader = the loudest single
-// activity", not "leader = the section with the most diverse activity mix".
-function topRowMemberCount(section) {
-  return section?.rows?.[0]?.memberNames?.length || 0;
-}
-
-function selectLeader(sections) {
-  if (!Array.isArray(sections) || sections.length === 0) return null;
-  let leader = sections[0];
-  let leaderCount = topRowMemberCount(leader);
-  for (const s of sections) {
-    const c = topRowMemberCount(s);
-    if (c > leaderCount) {
-      leader = s;
-      leaderCount = c;
-    }
+// Single-row grid of `count` equal-width tiles across w. Unit-agnostic —
+// caller decides logical vs scaled pixels.
+function computeEvenGrid(w, h, gap, count) {
+  if (count <= 0) return [];
+  const tileW = (w - gap * (count - 1)) / count;
+  const rects = [];
+  for (let i = 0; i < count; i += 1) {
+    rects.push({ x: i * (tileW + gap), y: 0, w: tileW, h });
   }
-  return leader;
-}
-
-// Returns { heroRect, smallRects[] } for a bento grid of given outer size.
-// All values are in the same pixel space as inputs (caller multiplies by
-// SCALE before calling, or not — this helper is unit-agnostic).
-//
-// Layouts:
-//   smallCount=0 → hero fills full rect, smallRects=[].
-//   smallCount=1 → hero 1.5fr left, 1 small 1fr right, both full height.
-//   smallCount=2 → hero 1.5fr left, 2 smalls stacked in right column.
-//   smallCount=3 → hero 1.5fr left, 3 smalls in 1-column stack on right.
-//   smallCount=4 → hero 1.5fr left, 2x2 grid of smalls on right.
-function computeBentoGrid(w, h, gap, smallCount) {
-  if (smallCount <= 0) {
-    return { heroRect: { x: 0, y: 0, w, h }, smallRects: [] };
-  }
-  const colSplit = w - gap;
-  const heroW = Math.floor(colSplit * 1.5 / 2.5);
-  const smallW = colSplit - heroW;
-  const heroRect = { x: 0, y: 0, w: heroW, h };
-  const smallX = heroW + gap;
-
-  if (smallCount === 1) {
-    return { heroRect, smallRects: [{ x: smallX, y: 0, w: smallW, h }] };
-  }
-  if (smallCount === 2 || smallCount === 3) {
-    const tileH = Math.floor((h - gap * (smallCount - 1)) / smallCount);
-    const smallRects = [];
-    for (let i = 0; i < smallCount; i += 1) {
-      smallRects.push({ x: smallX, y: i * (tileH + gap), w: smallW, h: tileH });
-    }
-    return { heroRect, smallRects };
-  }
-  // smallCount === 4 → 2x2.
-  const tileW = Math.floor((smallW - gap) / 2);
-  const tileH = Math.floor((h - gap) / 2);
-  const smallRects = [
-    { x: smallX,                  y: 0,            w: tileW, h: tileH },
-    { x: smallX + tileW + gap,    y: 0,            w: tileW, h: tileH },
-    { x: smallX,                  y: tileH + gap,  w: tileW, h: tileH },
-    { x: smallX + tileW + gap,    y: tileH + gap,  w: tileW, h: tileH },
-  ];
-  return { heroRect, smallRects };
+  return rects;
 }
 
 async function renderUsersDefault({ guildName, title, totals, members, guild }) {
-  const memberRows = members.slice(0, 10);
-  const hero = memberRows[0] || null;
-  const podium = memberRows.slice(1, 3); // #2, #3
-  const ladder = memberRows.slice(3);    // #4 onwards
+  // Top 5 get even tiles; the ladder below takes as many of the rest as are
+  // tracked (up to 10) so it doesn't look sparse once the top row grew from 3 to 5.
+  const memberRows = members.slice(0, 15);
+  const top5 = memberRows.slice(0, 5);
+  const hero = top5[0] || null;
+  const ladder = memberRows.slice(5); // #6 onwards
 
   // Resolve avatars in parallel.
   const resolved = await Promise.all(memberRows.map(async (r) => ({
@@ -364,7 +309,7 @@ async function renderUsersDefault({ guildName, title, totals, members, guild }) 
   const PAD = 20 * SCALE;
   const HEADER_H = 72 * SCALE;
   const GAP = 10 * SCALE;
-  const HERO_H = 232 * SCALE;
+  const TOP_H = 168 * SCALE;
   const LADDER_ROW_H = 32 * SCALE;
   const LADDER_PAD_Y = 6 * SCALE;
   const EMPTY_PANEL_H = 80 * SCALE;
@@ -403,7 +348,7 @@ async function renderUsersDefault({ guildName, title, totals, members, guild }) 
   const ladderH = ladder.length > 0
     ? LADDER_PAD_Y * 2 + LADDER_ROW_H * ladder.length
     : 0;
-  const height = PAD + HEADER_H + GAP + HERO_H
+  const height = PAD + HEADER_H + GAP + TOP_H
     + (ladderH > 0 ? GAP + ladderH : 0) + PAD;
 
   const canvas = createCanvas(W, height);
@@ -443,46 +388,38 @@ async function renderUsersDefault({ guildName, title, totals, members, guild }) 
   ctx.fillText(String(totals?.activeMembers ?? 0), activeRightX, y + 58 * SCALE);
   y += HEADER_H;
 
-  // ── Hero + podium grid ────────────────────────────────────────────────
+  // ── Top 5, even tiles ────────────────────────────────────────────────
   y += GAP;
   const innerW = W - PAD * 2;
-  const grid = computeBentoGrid(innerW, HERO_H, GAP, podium.length);
+  const rects = computeEvenGrid(innerW, TOP_H, GAP, top5.length);
+  const leaderMinutes = hero.voiceMinutes;
 
-  drawMemberHeroTile(
-    ctx,
-    PAD + grid.heroRect.x,
-    y + grid.heroRect.y,
-    grid.heroRect.w,
-    grid.heroRect.h,
-    hero,
-    resolved[0]?.avatar || null,
-  );
-
-  podium.forEach((row, i) => {
-    const rect = grid.smallRects[i];
-    drawMemberPodiumTile(
+  top5.forEach((row, i) => {
+    const rect = rects[i];
+    drawMemberRankTile(
       ctx,
       PAD + rect.x,
       y + rect.y,
       rect.w,
       rect.h,
       row,
-      resolved[i + 1]?.avatar || null,
-      i + 2, // rank 2 or 3
+      resolved[i]?.avatar || null,
+      i + 1,
+      leaderMinutes,
     );
   });
-  y += HERO_H;
+  y += TOP_H;
 
-  // ── Leaderboard 4–10 ──────────────────────────────────────────────────
+  // ── Leaderboard 6+ ───────────────────────────────────────────────────
   if (ladder.length > 0) {
     y += GAP;
     ctx.fillStyle = PALETTE.tileBg;
     roundRect(ctx, PAD, y, innerW, ladderH, RADIUS * SCALE);
     ctx.fill();
-    const leaderMinutes = ladder[0].voiceMinutes;
+    const ladderLeaderMinutes = ladder[0].voiceMinutes;
     ladder.forEach((row, i) => {
       const rowY = y + LADDER_PAD_Y + LADDER_ROW_H * i;
-      const enriched = { ...row, avatar: resolved[i + 3]?.avatar || null };
+      const enriched = { ...row, avatar: resolved[i + 5]?.avatar || null };
       drawLeaderboardRow(
         ctx,
         PAD + 14 * SCALE,
@@ -490,8 +427,8 @@ async function renderUsersDefault({ guildName, title, totals, members, guild }) 
         innerW - 28 * SCALE,
         LADDER_ROW_H,
         enriched,
-        i + 4,
-        leaderMinutes,
+        i + 6,
+        ladderLeaderMinutes,
       );
     });
   }
@@ -509,167 +446,79 @@ const LIVE_SECTIONS = [
   { key: "other",     title: "Other",     emoji: "🟣" },
 ];
 
-// Per-section label words for the hero subline (the "N in lobby" caption).
-const HERO_SUB_WORD = {
-  playing:   "in lobby",
-  voice:     "in channel",
-  listening: "listening",
-  watching:  "watching",
-  other:     "active",
+// Badge label + accent color per rank, ranks 1-5 (the even top-tile row).
+const RANK_BADGE = {
+  1: { text: "1ST · GOLD", color: PALETTE.gold },
+  2: { text: "2ND · SILVER", color: PALETTE.silver },
+  3: { text: "3RD · BRONZE", color: PALETTE.bronze },
+  4: { text: "4TH", color: PALETTE.usersDim },
+  5: { text: "5TH", color: PALETTE.usersDim },
 };
 
-// Draws the Live Activity hero tile.
-//
-// opts:
-//   section: { key, emoji, memberCount }
-//   row:     { display, timeStr, avatars, extraCount }
-//   barScale: number — denominator for the bottom progress bar, in minutes
-//   minutes:  number — row.minutes (used for the bar). If omitted, bar fills full.
-function drawHeroTile(ctx, x, y, w, h, opts) {
-  const isVoice = opts.section.key === "voice";
-  const tileBg = isVoice ? PALETTE.tileBgVoice : PALETTE.tileBg;
-  const accent = isVoice ? PALETTE.green : PALETTE.pink;
-  const timeColor = isVoice ? PALETTE.green : PALETTE.pink;
-
-  drawTileChrome(ctx, x, y, w, h, tileBg);
-
-  // Left-edge accent bar.
-  ctx.fillStyle = accent;
-  roundRect(ctx, x, y + 14 * SCALE, 3 * SCALE, h - 28 * SCALE, 2 * SCALE);
-  ctx.fill();
-
-  const innerX = x + 20 * SCALE;
-  const innerW = w - 40 * SCALE;
-
-  // Icon block — first letter of the activity name. (Discord emoji glyphs
-  // don't render on the DejaVu fonts shipped in the Fly Docker image, so a
-  // typed initial reads better than a tofu square. Future: swap for the
-  // role icon when one is configured for this row.)
-  const iconSize = 48 * SCALE;
-  const iconY = y + 18 * SCALE;
-  ctx.fillStyle = "rgba(255,255,255,0.08)";
-  roundRect(ctx, innerX, iconY, iconSize, iconSize, 12 * SCALE);
-  ctx.fill();
-  const initial = (opts.row.display || "?").trim().charAt(0).toUpperCase() || "?";
-  ctx.fillStyle = PALETTE.usersText;
-  ctx.font = `bold ${24 * SCALE}px UI Bold`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(initial, innerX + iconSize / 2, iconY + iconSize / 2);
-
-  // Section label + activity name (right of icon block).
-  const textX = innerX + iconSize + 14 * SCALE;
-  const textW = innerW - iconSize - 14 * SCALE;
-  ctx.textAlign = "left";
-  ctx.textBaseline = "alphabetic";
-
-  const label = `LEADING · ${opts.section.key.toUpperCase()}`;
-  ctx.fillStyle = PALETTE.usersMuted;
-  ctx.font = `bold ${10 * SCALE}px UI Bold`;
-  ctx.fillText(label, textX, iconY + 14 * SCALE);
-
-  const nameFont = `bold ${22 * SCALE}px UI Bold`;
-  const nameText = truncate(ctx, opts.row.display, textW, nameFont);
-  ctx.font = nameFont;
-  ctx.fillStyle = PALETTE.usersText;
-  ctx.fillText(nameText, textX, iconY + 40 * SCALE);
-
-  // Avatar cluster (centered horizontally) + time below it.
-  const avSize = 32 * SCALE;
-  const avStep = 20 * SCALE;
-  const avatars = opts.row.avatars || [];
-  const extraCount = opts.row.extraCount || 0;
-  const clusterWidth = avatars.length === 0
-    ? avSize
-    : avSize + avStep * (avatars.length - 1);
-  const clusterStartX = innerX + (innerW - clusterWidth) / 2;
-  const clusterY = y + h - 96 * SCALE;
-  drawAvatarCluster(ctx, clusterStartX, clusterY, {
-    avatars,
-    extraCount,
-    size: avSize,
-    step: avStep,
-    ringColor: tileBg.replace(/[\d.]+\)$/, "1)"), // opaque ring matching tile bg
-  });
-
-  // Time + sub-caption.
-  const timeY = y + h - 36 * SCALE;
-  ctx.font = `bold ${26 * SCALE}px UI Bold`;
-  ctx.fillStyle = timeColor;
-  ctx.textAlign = "center";
-  ctx.fillText(opts.row.timeStr, innerX + innerW / 2, timeY);
-
-  // Subtitle reflects the HERO ROW's member count, not the section-wide total
-  // (which sums all unique members across every row in the section and would
-  // mislead — e.g. "7 in lobby" on a single game that only one person plays).
-  const heroMemberCount = opts.row.memberNames?.length || 0;
-  const sub = `${heroMemberCount} ${HERO_SUB_WORD[opts.section.key] || "active"}`;
-  ctx.font = `${12 * SCALE}px UI`;
-  ctx.fillStyle = PALETTE.usersMuted;
-  ctx.fillText(sub, innerX + innerW / 2, timeY + 18 * SCALE);
-
-  // Bottom progress bar.
-  const barValue = opts.barScale > 0 && typeof opts.minutes === "number"
-    ? opts.minutes / opts.barScale
-    : 1;
-  drawTileBar(ctx, x, y, w, h, barValue, accent);
-}
-
-function drawMemberHeroTile(ctx, x, y, w, h, row, avatar) {
+// One of the top-5 even tiles. Centered vertical stack (badge, avatar, name,
+// game line, big voice time) — narrower than the old hero/podium tiles so a
+// left/right split doesn't have room to breathe.
+// leaderMinutes: rank-1's voiceMinutes, used as the bottom bar's 100% reference
+// so all 5 bars are comparable (rank 1's bar is always full).
+function drawMemberRankTile(ctx, x, y, w, h, row, avatar, rank, leaderMinutes) {
   drawTileChrome(ctx, x, y, w, h, PALETTE.tileBg);
 
-  // Left-edge gold accent bar.
-  ctx.fillStyle = PALETTE.gold;
+  const badge = RANK_BADGE[rank] || { text: `${rank}TH`, color: PALETTE.usersDim };
+  const barColor = rank === 1 ? PALETTE.gold : rank === 2 ? PALETTE.silver : rank === 3 ? PALETTE.bronze : PALETTE.blue;
+  const timeColor = rank === 1 ? PALETTE.pink : PALETTE.blue;
+
+  ctx.fillStyle = badge.color;
   roundRect(ctx, x, y + 14 * SCALE, 3 * SCALE, h - 28 * SCALE, 2 * SCALE);
   ctx.fill();
 
-  const innerX = x + 20 * SCALE;
-  const innerW = w - 40 * SCALE;
+  const innerX = x + 14 * SCALE;
+  const innerW = w - 28 * SCALE;
+  const cx = x + w / 2;
 
-  // Rank label.
-  ctx.textAlign = "left";
+  // Rank badge, centered.
+  ctx.textAlign = "center";
   ctx.textBaseline = "alphabetic";
-  ctx.font = `bold ${11 * SCALE}px UI Bold`;
-  ctx.fillStyle = PALETTE.gold;
-  ctx.fillText("🏆 1ST · GOLD", innerX, y + 26 * SCALE);
+  ctx.font = `bold ${10 * SCALE}px UI Bold`;
+  ctx.fillStyle = badge.color;
+  ctx.fillText(badge.text, cx, y + 22 * SCALE);
 
-  // Avatar + name + game stack.
-  const avSize = 64 * SCALE;
-  const avCx = innerX + avSize / 2;
-  const avCy = y + 70 * SCALE;
+  // Avatar, centered.
+  const avSize = 44 * SCALE;
+  const avCy = y + 56 * SCALE;
   if (avatar) {
     ctx.save();
     ctx.beginPath();
-    ctx.arc(avCx, avCy, avSize / 2, 0, Math.PI * 2);
+    ctx.arc(cx, avCy, avSize / 2, 0, Math.PI * 2);
     ctx.closePath();
     ctx.clip();
-    ctx.drawImage(avatar, avCx - avSize / 2, avCy - avSize / 2, avSize, avSize);
+    ctx.drawImage(avatar, cx - avSize / 2, avCy - avSize / 2, avSize, avSize);
     ctx.restore();
   } else {
     ctx.beginPath();
-    ctx.arc(avCx, avCy, avSize / 2, 0, Math.PI * 2);
+    ctx.arc(cx, avCy, avSize / 2, 0, Math.PI * 2);
     ctx.fillStyle = PALETTE.usersBorder;
     ctx.fill();
   }
 
-  const textX = innerX + avSize + 16 * SCALE;
-  const textW = innerW - avSize - 16 * SCALE;
-
-  // Name (22px) and game name (22px to match).
-  const lineFont = `bold ${22 * SCALE}px UI Bold`;
-  ctx.font = lineFont;
+  // Name, centered.
+  const nameFont = `bold ${13 * SCALE}px UI Bold`;
+  ctx.font = nameFont;
+  const nameText = truncate(ctx, row.displayName, innerW, nameFont);
   ctx.fillStyle = PALETTE.usersText;
-  const nameText = truncate(ctx, row.displayName, textW, lineFont);
-  ctx.fillText(nameText, textX, y + 60 * SCALE);
+  ctx.fillText(nameText, cx, avCy + avSize / 2 + 20 * SCALE);
 
+  // Game + time, centered, muted.
   const gameLabel = row.topGame
     ? `${row.topGame.key} · ${fmtTime(row.topGame.minutes)}`
     : "—";
-  const gameText = truncate(ctx, gameLabel, textW, lineFont);
-  ctx.fillText(gameText, textX, y + 90 * SCALE);
+  const gameFont = `${10 * SCALE}px UI`;
+  ctx.font = gameFont;
+  const gameText = truncate(ctx, gameLabel, innerW, gameFont);
+  ctx.fillStyle = PALETTE.usersMuted;
+  ctx.fillText(gameText, cx, avCy + avSize / 2 + 34 * SCALE);
 
   // Divider.
-  const divY = y + 120 * SCALE;
+  const divY = y + h - 54 * SCALE;
   ctx.strokeStyle = "rgba(255,255,255,0.06)";
   ctx.lineWidth = 1 * SCALE;
   ctx.beginPath();
@@ -677,84 +526,14 @@ function drawMemberHeroTile(ctx, x, y, w, h, row, avatar) {
   ctx.lineTo(innerX + innerW, divY);
   ctx.stroke();
 
-  // VOICE · 30D label centered.
-  ctx.textAlign = "center";
-  ctx.font = `bold ${10 * SCALE}px UI Bold`;
-  ctx.fillStyle = PALETTE.usersMuted;
-  ctx.fillText("VOICE · 30D", innerX + innerW / 2, divY + 28 * SCALE);
-
-  // Big time.
-  ctx.font = `bold ${32 * SCALE}px UI Bold`;
-  ctx.fillStyle = PALETTE.pink;
-  ctx.fillText(fmtTime(row.voiceMinutes), innerX + innerW / 2, divY + 68 * SCALE);
-
-  // Bottom bar (always full).
-  drawTileBar(ctx, x, y, w, h, 1, PALETTE.pink);
-}
-
-// rank: 2 → silver, 3 → bronze (no other ranks accepted).
-function drawMemberPodiumTile(ctx, x, y, w, h, row, avatar, rank) {
-  drawTileChrome(ctx, x, y, w, h, PALETTE.tileBg);
-
-  const rankInfo = rank === 2
-    ? { label: "🥈 2ND · SILVER", color: PALETTE.silver }
-    : { label: "🥉 3RD · BRONZE", color: PALETTE.bronze };
-
-  const padX = 14 * SCALE;
-  const avSize = 44 * SCALE;
-  const avCx = x + padX + avSize / 2;
-  const avCy = y + h / 2;
-
-  // Avatar.
-  if (avatar) {
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(avCx, avCy, avSize / 2, 0, Math.PI * 2);
-    ctx.closePath();
-    ctx.clip();
-    ctx.drawImage(avatar, avCx - avSize / 2, avCy - avSize / 2, avSize, avSize);
-    ctx.restore();
-  } else {
-    ctx.beginPath();
-    ctx.arc(avCx, avCy, avSize / 2, 0, Math.PI * 2);
-    ctx.fillStyle = PALETTE.usersBorder;
-    ctx.fill();
-  }
-
-  // Right-aligned time.
-  ctx.textAlign = "right";
-  ctx.textBaseline = "middle";
+  // Big voice time, centered.
   ctx.font = `bold ${18 * SCALE}px UI Bold`;
-  ctx.fillStyle = PALETTE.blue;
-  const timeStr = fmtTime(row.voiceMinutes);
-  ctx.fillText(timeStr, x + w - padX, avCy);
-  const timeW = ctx.measureText(timeStr).width;
+  ctx.fillStyle = timeColor;
+  ctx.fillText(fmtTime(row.voiceMinutes), cx, y + h - 24 * SCALE);
 
-  // Text stack (left-aligned, between avatar and time).
-  const textX = x + padX + avSize + 12 * SCALE;
-  const textRight = x + w - padX - timeW - 12 * SCALE;
-  const textW = Math.max(0, textRight - textX);
-
-  ctx.textAlign = "left";
-  ctx.textBaseline = "alphabetic";
-  ctx.font = `bold ${10 * SCALE}px UI Bold`;
-  ctx.fillStyle = rankInfo.color;
-  ctx.fillText(rankInfo.label, textX, avCy - 14 * SCALE);
-
-  const nameFont = `bold ${15 * SCALE}px UI Bold`;
-  const nameText = truncate(ctx, row.displayName, textW, nameFont);
-  ctx.font = nameFont;
-  ctx.fillStyle = PALETTE.usersText;
-  ctx.fillText(nameText, textX, avCy + 4 * SCALE);
-
-  const gameLabel = row.topGame
-    ? `${row.topGame.key} · ${fmtTime(row.topGame.minutes)}`
-    : "—";
-  const gameFont = `${11 * SCALE}px UI`;
-  const gameText = truncate(ctx, gameLabel, textW, gameFont);
-  ctx.font = gameFont;
-  ctx.fillStyle = PALETTE.usersMuted;
-  ctx.fillText(gameText, textX, avCy + 20 * SCALE);
+  // Bottom bar, scaled against the rank-1 leader.
+  const barValue = leaderMinutes > 0 ? row.voiceMinutes / leaderMinutes : 1;
+  drawTileBar(ctx, x, y, w, h, barValue, barColor);
 }
 
 function drawLeaderboardRow(ctx, x, y, w, h, row, rank, leaderMinutes) {
@@ -827,77 +606,18 @@ function drawLeaderboardRow(ctx, x, y, w, h, row, rank, leaderMinutes) {
   const nameText = truncate(ctx, row.displayName, Math.min(textW, nameOnlyW), nameFont);
   ctx.fillStyle = PALETTE.usersText;
   ctx.fillText(nameText, textX, cy);
+  // Measure the rendered name width *before* switching fonts below — the
+  // game label's own (narrower) font would otherwise under-measure the name
+  // and place the game text on top of its tail end.
+  const nameW = ctx.measureText(nameText).width;
   if (gameLabel) {
     const gameFont = `${11 * SCALE}px UI`;
-    const remaining = textW - ctx.measureText(nameText).width;
+    const remaining = textW - nameW;
     const gameText = truncate(ctx, gameLabel, Math.max(0, remaining), gameFont);
     ctx.font = gameFont;
     ctx.fillStyle = PALETTE.usersMuted;
-    ctx.fillText(gameText, textX + ctx.measureText(nameText).width, cy);
+    ctx.fillText(gameText, textX + nameW, cy);
   }
-}
-
-function drawSmallTile(ctx, x, y, w, h, opts) {
-  const isVoice = opts.section.key === "voice";
-  const tileBg = isVoice ? PALETTE.tileBgVoice : PALETTE.tileBg;
-  const timeColor = isVoice ? PALETTE.green : PALETTE.blue;
-
-  drawTileChrome(ctx, x, y, w, h, tileBg);
-
-  const innerX = x + 14 * SCALE;
-  const innerW = w - 28 * SCALE;
-  ctx.textAlign = "left";
-  ctx.textBaseline = "alphabetic";
-
-  // Top label row: "emoji SECTION" left, count right.
-  const labelY = y + 18 * SCALE;
-  ctx.font = `bold ${10 * SCALE}px UI Bold`;
-  ctx.fillStyle = PALETTE.usersMuted;
-  ctx.fillText(opts.section.title.toUpperCase(), innerX, labelY);
-
-  ctx.textAlign = "right";
-  ctx.fillStyle = PALETTE.usersText;
-  ctx.fillText(String(opts.section.memberCount), innerX + innerW, labelY);
-
-  // Name + time on the same row. Time is right-aligned; the name truncates
-  // to fit the leftover width. Same 15*SCALE font for both so they share a
-  // baseline; the time is colored (blue / green) rather than bumped in size.
-  const rowFont = `bold ${15 * SCALE}px UI Bold`;
-  const rowY = y + 44 * SCALE;
-  ctx.font = rowFont;
-  const timeStr = opts.row.timeStr || "";
-  const timeWidth = ctx.measureText(timeStr).width;
-
-  ctx.textAlign = "right";
-  ctx.fillStyle = timeColor;
-  ctx.fillText(timeStr, innerX + innerW, rowY);
-
-  ctx.textAlign = "left";
-  const nameMaxW = Math.max(0, innerW - timeWidth - 8 * SCALE);
-  const nameText = truncate(ctx, opts.row.display, nameMaxW, rowFont);
-  ctx.font = rowFont;
-  ctx.fillStyle = PALETTE.usersText;
-  ctx.fillText(nameText, innerX, rowY);
-
-  // Members line below the name+time row.
-  const memberLabel = (() => {
-    const names = opts.row.memberNames || [];
-    const shown = names.slice(0, 3);
-    const more = names.length - shown.length;
-    if (shown.length === 0) return "";
-    return `${shown.join(", ")}${more > 0 ? ` +${more}` : ""}`;
-  })();
-  if (memberLabel) {
-    const memberFont = `${11 * SCALE}px UI`;
-    const memberText = truncate(ctx, memberLabel, innerW, memberFont);
-    ctx.font = memberFont;
-    ctx.fillStyle = PALETTE.usersMuted;
-    ctx.fillText(memberText, innerX, y + 62 * SCALE);
-  }
-
-  // Bottom bar.
-  const barValue = opts.barScale > 0 ? opts.row.minutes / opts.barScale : 0;
-  drawTileBar(ctx, x, y, w, h, barValue, isVoice ? PALETTE.green : PALETTE.pink);
 }
 
 // One row inside the "ALSO HAPPENING" overflow panel below the bento grid.
@@ -1005,6 +725,98 @@ function overflowPanelHeight(overflow) {
   return headerH + rowH * overflow.length + bottomPad;
 }
 
+// A row-label above a tile block: small muted uppercase text, no panel.
+function drawTileRowLabel(ctx, x, y, text) {
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+  ctx.font = `bold ${10 * SCALE}px UI Bold`;
+  ctx.fillStyle = PALETTE.usersMuted;
+  ctx.fillText(text, x, y);
+}
+
+// One tile in a Live Activity top row (voice channel or currently-played
+// game). Shares drawMemberRankTile's centered-stack shell (badge, avatar
+// area, name, divider, big time, bar) for visual coherence with the !stats
+// leaderboard image, but takes an avatar *cluster* instead of a single
+// avatar since a voice channel or a game can have several people in it at
+// once.
+//
+// opts: { variant: "voice"|"game", label, title, avatars, extraCount,
+//         timeStr, subCaption, barValue }
+function drawActivityTile(ctx, x, y, w, h, opts) {
+  const isVoice = opts.variant === "voice";
+  const tileBg = isVoice ? PALETTE.tileBgVoice : PALETTE.tileBg;
+  const accent = isVoice ? PALETTE.green : PALETTE.pink;
+  const timeColor = isVoice ? PALETTE.green : PALETTE.blue;
+  const barColor = isVoice ? PALETTE.green : PALETTE.pink;
+
+  drawTileChrome(ctx, x, y, w, h, tileBg);
+
+  ctx.fillStyle = accent;
+  roundRect(ctx, x, y + 14 * SCALE, 3 * SCALE, h - 28 * SCALE, 2 * SCALE);
+  ctx.fill();
+
+  const innerX = x + 14 * SCALE;
+  const innerW = w - 28 * SCALE;
+  const cx = x + w / 2;
+
+  // Variant label, centered.
+  ctx.textAlign = "center";
+  ctx.textBaseline = "alphabetic";
+  ctx.font = `bold ${10 * SCALE}px UI Bold`;
+  ctx.fillStyle = accent;
+  ctx.fillText(opts.label, cx, y + 22 * SCALE);
+
+  // Avatar cluster, centered.
+  const avSize = 36 * SCALE;
+  const avStep = 22 * SCALE;
+  const avatars = opts.avatars || [];
+  const extraCount = opts.extraCount || 0;
+  const clusterWidth = avatars.length === 0 ? avSize : avSize + avStep * (avatars.length - 1);
+  const clusterY = y + 56 * SCALE;
+  drawAvatarCluster(ctx, cx - clusterWidth / 2, clusterY, {
+    avatars,
+    extraCount,
+    size: avSize,
+    step: avStep,
+    ringColor: tileBg.replace(/[\d.]+\)$/, "1)"),
+  });
+
+  // Name, centered.
+  const nameFont = `bold ${13 * SCALE}px UI Bold`;
+  ctx.textAlign = "center";
+  ctx.font = nameFont;
+  const nameText = truncate(ctx, opts.title, innerW, nameFont);
+  ctx.fillStyle = PALETTE.usersText;
+  ctx.fillText(nameText, cx, clusterY + avSize / 2 + 20 * SCALE);
+
+  // Sub-caption, centered, muted.
+  if (opts.subCaption) {
+    const subFont = `${10 * SCALE}px UI`;
+    ctx.font = subFont;
+    const subText = truncate(ctx, opts.subCaption, innerW, subFont);
+    ctx.fillStyle = PALETTE.usersMuted;
+    ctx.fillText(subText, cx, clusterY + avSize / 2 + 36 * SCALE);
+  }
+
+  // Divider.
+  const divY = y + h - 54 * SCALE;
+  ctx.strokeStyle = "rgba(255,255,255,0.06)";
+  ctx.lineWidth = 1 * SCALE;
+  ctx.beginPath();
+  ctx.moveTo(innerX, divY);
+  ctx.lineTo(innerX + innerW, divY);
+  ctx.stroke();
+
+  // Big time, centered.
+  ctx.font = `bold ${18 * SCALE}px UI Bold`;
+  ctx.fillStyle = timeColor;
+  ctx.fillText(opts.timeStr, cx, y + h - 24 * SCALE);
+
+  // Bottom bar.
+  drawTileBar(ctx, x, y, w, h, opts.barValue ?? 1, barColor);
+}
+
 async function renderLiveActivity({ guildName, totalActive, sections }) {
   // Layout constants (1× logical pixels — multiplied by SCALE before drawing).
   const W = 960 * SCALE;
@@ -1012,26 +824,50 @@ async function renderLiveActivity({ guildName, totalActive, sections }) {
   const HEADER_H = 72 * SCALE;
   const GAP = 10 * SCALE;
   const EMPTY_PANEL_H = 80 * SCALE;
-  const HERO_H = 232 * SCALE;
+  // Same tile height as the !stats top-5 row, so the two images read as one
+  // coherent visual system rather than two different layout languages.
+  const TILE_H = 168 * SCALE;
+  const LABEL_H = 24 * SCALE;
+  const MAX_TILES = 5;
 
   const hasContent = Array.isArray(sections) && sections.length > 0;
 
-  // Compute overflow up front so we can size the canvas.
-  // Every row at index ≥1 from every section is overflow — both the leader's
-  // dropped rows and every other section's non-top rows.
+  // Voice always gets its own top row (never competes with games for a
+  // slot); games below it are ranked by combined current-player time
+  // (sumActiveElapsedMinutes upstream) so a game several people are playing
+  // outranks one person's longer solo session.
+  const voiceSection = sections.find((s) => s.key === "voice") || null;
+  const voiceRows = (voiceSection?.rows || []).slice(0, MAX_TILES);
+  const gameSection = sections.find((s) => s.key === "playing") || null;
+  const gameRows = (gameSection?.rows || []).slice(0, MAX_TILES);
+
+  // Everything not shown in the two rows above: voice/games beyond the top 5
+  // (rare), plus every row from listening/watching/other (they don't get a
+  // dedicated row in this layout).
   const overflow = [];
   if (hasContent) {
-    for (const section of sections) {
-      for (let i = 1; i < section.rows.length; i += 1) {
-        overflow.push({ section, row: section.rows[i] });
+    if (voiceSection) {
+      for (let i = MAX_TILES; i < voiceSection.rows.length; i += 1) {
+        overflow.push({ section: voiceSection, row: voiceSection.rows[i] });
       }
+    }
+    if (gameSection) {
+      for (let i = MAX_TILES; i < gameSection.rows.length; i += 1) {
+        overflow.push({ section: gameSection, row: gameSection.rows[i] });
+      }
+    }
+    for (const section of sections) {
+      if (section.key === "voice" || section.key === "playing") continue;
+      for (const row of section.rows) overflow.push({ section, row });
     }
   }
   const overflowH = overflowPanelHeight(overflow);
 
-  const bodyH = hasContent
-    ? HERO_H + (overflowH > 0 ? GAP + overflowH : 0)
-    : EMPTY_PANEL_H;
+  let bodyH = 0;
+  if (voiceRows.length > 0) bodyH += LABEL_H + TILE_H;
+  if (gameRows.length > 0) bodyH += (bodyH > 0 ? GAP : 0) + LABEL_H + TILE_H;
+  if (overflowH > 0) bodyH += (bodyH > 0 ? GAP : 0) + overflowH;
+  if (!hasContent) bodyH = EMPTY_PANEL_H;
   const height = PAD + HEADER_H + GAP + bodyH + PAD;
 
   const canvas = createCanvas(W, height);
@@ -1087,47 +923,60 @@ async function renderLiveActivity({ guildName, totalActive, sections }) {
     return canvas.toBuffer("image/jpeg");
   }
 
-  // ── Bento grid ────────────────────────────────────────────────────────
+  // ── Active Voice Channels — always its own row, never fighting games for a slot ──
   y += GAP;
-  const leader = selectLeader(sections);
-  const others = sections.filter((s) => s !== leader);
   const innerW = W - PAD * 2;
-  const grid = computeBentoGrid(innerW, HERO_H, GAP, others.length);
 
-  // Bar scale: max minutes across all top rows of all displayed sections.
-  const barScale = sections.reduce(
-    (m, s) => Math.max(m, s.rows[0]?.minutes || 0),
-    0,
-  );
+  if (voiceRows.length > 0) {
+    drawTileRowLabel(ctx, PAD, y + 16 * SCALE, "ACTIVE VOICE CHANNELS");
+    y += LABEL_H;
+    const voiceLeaderMinutes = voiceRows[0]?.minutes || 0;
+    const voiceRects = computeEvenGrid(innerW, TILE_H, GAP, voiceRows.length);
+    voiceRows.forEach((row, i) => {
+      const rect = voiceRects[i];
+      const count = row.memberNames?.length || row.count || 0;
+      drawActivityTile(ctx, PAD + rect.x, y + rect.y, rect.w, rect.h, {
+        variant: "voice",
+        label: "VOICE",
+        title: row.display,
+        avatars: row.avatars || [],
+        extraCount: row.extraCount || 0,
+        timeStr: row.timeStr,
+        subCaption: `${count} in channel`,
+        barValue: voiceLeaderMinutes > 0 ? row.minutes / voiceLeaderMinutes : 1,
+      });
+    });
+    y += TILE_H;
+  }
 
-  // Hero.
-  const heroRow = leader.rows[0];
-  drawHeroTile(
-    ctx,
-    PAD + grid.heroRect.x,
-    y + grid.heroRect.y,
-    grid.heroRect.w,
-    grid.heroRect.h,
-    { section: leader, row: heroRow, barScale, minutes: heroRow.minutes },
-  );
+  // ── Top games — ranked by combined current-player time ──────────────────
+  if (gameRows.length > 0) {
+    if (voiceRows.length > 0) y += GAP;
+    drawTileRowLabel(ctx, PAD, y + 16 * SCALE, "TOP GAMES");
+    y += LABEL_H;
+    const gameLeaderMinutes = gameRows[0]?.minutes || 0;
+    const gameRects = computeEvenGrid(innerW, TILE_H, GAP, gameRows.length);
+    gameRows.forEach((row, i) => {
+      const rect = gameRects[i];
+      const count = row.memberNames?.length || row.count || 0;
+      drawActivityTile(ctx, PAD + rect.x, y + rect.y, rect.w, rect.h, {
+        variant: "game",
+        label: "PLAYING",
+        title: row.display,
+        avatars: row.avatars || [],
+        extraCount: row.extraCount || 0,
+        timeStr: row.timeStr,
+        subCaption: `${count} ${count === 1 ? "person" : "people"}`,
+        barValue: gameLeaderMinutes > 0 ? row.minutes / gameLeaderMinutes : 1,
+      });
+    });
+    y += TILE_H;
+  }
 
-  // Smalls.
-  others.forEach((section, i) => {
-    const rect = grid.smallRects[i];
-    const topRow = section.rows[0];
-    drawSmallTile(
-      ctx,
-      PAD + rect.x,
-      y + rect.y,
-      rect.w,
-      rect.h,
-      { section, row: topRow, barScale },
-    );
-  });
-
-  // Overflow panel below the bento — every dropped row.
+  // Overflow panel — everything not shown above.
   if (overflowH > 0) {
-    drawOverflowPanel(ctx, PAD, y + HERO_H + GAP, innerW, overflow);
+    if (voiceRows.length > 0 || gameRows.length > 0) y += GAP;
+    drawOverflowPanel(ctx, PAD, y, innerW, overflow);
   }
 
   return canvas.toBuffer("image/jpeg");
@@ -1271,12 +1120,9 @@ module.exports = {
   renderPlaying,
   loadUserAvatarCached,
   __userAvatarCache: userAvatarCache,
-  __selectLeader: selectLeader,
-  __computeBentoGrid: computeBentoGrid,
-  __drawHeroTile: drawHeroTile,
-  __drawSmallTile: drawSmallTile,
-  __drawMemberHeroTile: drawMemberHeroTile,
-  __drawMemberPodiumTile: drawMemberPodiumTile,
+  __computeEvenGrid: computeEvenGrid,
+  __drawMemberRankTile: drawMemberRankTile,
   __drawLeaderboardRow: drawLeaderboardRow,
+  __drawActivityTile: drawActivityTile,
   __drawOverflowPanel: drawOverflowPanel,
 };

@@ -174,6 +174,21 @@ function activeElapsedMinutes(guildId, type, key, subjectIds = null) {
   return max;
 }
 
+// Same scan as activeElapsedMinutes but sums every simultaneous participant's
+// elapsed time instead of taking the max. Used to rank the Live Activity top
+// games list — a game 3 people are playing right now should outrank one
+// person's longer solo session, which a max-based comparison can't express.
+function sumActiveElapsedMinutes(guildId, type, key, subjectIds = null) {
+  const allowed = subjectIds ? new Set(subjectIds) : null;
+  let sum = 0;
+  for (const open of Object.values(openSessions[guildId] || {})) {
+    if (open.type !== type || open.key !== key) continue;
+    if (allowed && !allowed.has(open.subjectId)) continue;
+    sum += elapsedMinutes(guildId, type, key, open.subjectId);
+  }
+  return sum;
+}
+
 // --- boot sweep ---
 // Wrap the startup pass with bootBegin()/bootEnd(). Any session that was open
 // on disk but isn't re-observed during the sweep is closed with zero credit
@@ -340,6 +355,7 @@ module.exports = {
   observeAbsence,
   elapsedMinutes,
   activeElapsedMinutes,
+  sumActiveElapsedMinutes,
   bootBegin,
   bootEnd,
   leaderboard,

@@ -41,153 +41,96 @@ function makeStubCtx() {
   return { ctx, calls };
 }
 
-test("selectLeader returns null for empty input", () => {
-  assert.equal(stats.__selectLeader([]), null);
-  assert.equal(stats.__selectLeader(null), null);
-  assert.equal(stats.__selectLeader(undefined), null);
-});
-
-// Helper for the leader tests below — selectLeader now compares the top
-// row's memberNames length, not section-wide totals.
-function sec(key, topRowMembers) {
-  return { key, rows: [{ memberNames: Array(topRowMembers).fill("x") }] };
+// measureText's width here depends on the currently-set font (size + bold),
+// same as a real canvas — unlike the shared stub above (flat 7px/char,
+// tuned so other tests' hardcoded tile widths don't truncate). This is what
+// lets drawLeaderboardRow's font-swap-before-measuring overlap bug (fixed in
+// 10.13.0) actually show up under test.
+function fontWidth(text, font) {
+  const px = Number((/([\d.]+)px/.exec(font) || [, 13])[1]);
+  const bold = /bold/i.test(font);
+  return String(text).length * px * (bold ? 0.62 : 0.52);
 }
 
-test("selectLeader returns the single section when only one", () => {
-  const only = sec("playing", 2);
-  assert.equal(stats.__selectLeader([only]), only);
-});
-
-test("selectLeader picks the section whose top row has the most members", () => {
-  const a = sec("playing",   3);
-  const b = sec("voice",     8);
-  const c = sec("listening", 1);
-  assert.equal(stats.__selectLeader([a, b, c]), b);
-});
-
-test("selectLeader ties break to the earliest section in input order", () => {
-  const a = sec("playing", 4);
-  const b = sec("voice",   4);
-  assert.equal(stats.__selectLeader([a, b]), a);
-});
-
-test("selectLeader handles sections with no rows (treats as 0 members)", () => {
-  const a = { key: "playing", rows: [] };
-  const b = sec("voice", 1);
-  assert.equal(stats.__selectLeader([a, b]), b);
-});
-
-test("computeBentoGrid with 0 small tiles → hero fills the rect", () => {
-  const grid = stats.__computeBentoGrid(600, 240, 10, 0);
-  assert.deepEqual(grid.heroRect, { x: 0, y: 0, w: 600, h: 240 });
-  assert.deepEqual(grid.smallRects, []);
-});
-
-test("computeBentoGrid with 1 small tile → hero + 1 full-height column", () => {
-  const grid = stats.__computeBentoGrid(610, 240, 10, 1);
-  // hero takes 1.5fr of available split, small takes 1fr.
-  // available = 610 - 10 = 600; hero = 600 * 1.5/2.5 = 360; small = 240.
-  assert.deepEqual(grid.heroRect, { x: 0, y: 0, w: 360, h: 240 });
-  assert.equal(grid.smallRects.length, 1);
-  assert.deepEqual(grid.smallRects[0], { x: 370, y: 0, w: 240, h: 240 });
-});
-
-test("computeBentoGrid with 2 small tiles → vertical stack on right", () => {
-  const grid = stats.__computeBentoGrid(610, 250, 10, 2);
-  assert.equal(grid.heroRect.w, 360);
-  assert.equal(grid.heroRect.h, 250);
-  assert.equal(grid.smallRects.length, 2);
-  // 2 tiles stacked in a 250-tall column with 10px gap → each 120 tall.
-  assert.equal(grid.smallRects[0].h, 120);
-  assert.equal(grid.smallRects[1].h, 120);
-  assert.equal(grid.smallRects[1].y, 130);
-});
-
-test("computeBentoGrid with 3 small tiles → 3-deep stack on right", () => {
-  const grid = stats.__computeBentoGrid(610, 250, 10, 3);
-  assert.equal(grid.smallRects.length, 3);
-  // (250 - 20) / 3 = 76.66 → 76.
-  assert.equal(grid.smallRects[0].h, 76);
-});
-
-test("computeBentoGrid with 4 small tiles → 2x2 grid on right", () => {
-  const grid = stats.__computeBentoGrid(610, 250, 10, 4);
-  assert.equal(grid.smallRects.length, 4);
-  // 4 tiles in a 2x2: each 120 tall, ~115 wide (240/2 - 5).
-  const sums = grid.smallRects.map((r) => `${r.x},${r.y}`);
-  // Tiles are placed row-major: 0=TL, 1=TR, 2=BL, 3=BR.
-  assert.equal(sums[0], "370,0");
-  assert.equal(sums[1], "495,0"); // 370 + 115 + 10
-  assert.equal(sums[2], "370,130");
-  assert.equal(sums[3], "495,130");
-});
+function makeFontAwareStubCtx() {
+  const { ctx, calls } = makeStubCtx();
+  let currentFont = "13px UI";
+  const fontDescriptor = Object.getOwnPropertyDescriptor(ctx, "font");
+  Object.defineProperty(ctx, "font", {
+    set(v) { currentFont = v; fontDescriptor.set.call(ctx, v); },
+    get() { return currentFont; },
+  });
+  ctx.measureText = (s) => ({ width: fontWidth(s, currentFont) });
+  return { ctx, calls };
+}
 
 const fakeImage2 = { _fake: true };
 
-test("drawHeroTile draws name, time, and avatar cluster", () => {
+test("computeEvenGrid splits width into `count` equal tiles with gaps between", () => {
+  const rects = stats.__computeEvenGrid(920, 168, 10, 5);
+  assert.equal(rects.length, 5);
+  // (920 - 4*10) / 5 = 176 each.
+  assert.ok(rects.every((r) => r.w === 176 && r.h === 168 && r.y === 0));
+  assert.equal(rects[0].x, 0);
+  assert.equal(rects[1].x, 186); // 176 + 10
+  assert.equal(rects[4].x, 744); // 4 * 186
+});
+
+test("computeEvenGrid returns [] for a zero count", () => {
+  assert.deepEqual(stats.__computeEvenGrid(920, 168, 10, 0), []);
+});
+
+test("computeEvenGrid handles a single tile (spans the full width)", () => {
+  const rects = stats.__computeEvenGrid(920, 168, 10, 1);
+  assert.deepEqual(rects, [{ x: 0, y: 0, w: 920, h: 168 }]);
+});
+
+test("drawActivityTile draws label, title, time, and an avatar cluster", () => {
   const { ctx, calls } = makeStubCtx();
-  stats.__drawHeroTile(ctx, 0, 0, 600, 400, {
-    section: { key: "playing", emoji: "🎮", memberCount: 6 },
-    row: {
-      display: "Counter-Strike 2",
-      timeStr: "24m",
-      avatars: [fakeImage2, fakeImage2, fakeImage2],
-      extraCount: 3,
-    },
-    barScale: 60,
+  stats.__drawActivityTile(ctx, 0, 0, 176, 168, {
+    variant: "game",
+    label: "PLAYING",
+    title: "Counter-Strike 2",
+    avatars: [fakeImage2, fakeImage2, fakeImage2],
+    extraCount: 2,
+    timeStr: "24m",
+    subCaption: "5 people",
+    barValue: 0.6,
   });
   const texts = calls.filter((c) => c[0] === "fillText").map((c) => c[1]);
-  assert.ok(texts.includes("Counter-Strike 2"), `expected name in fillText, got ${JSON.stringify(texts)}`);
-  assert.ok(texts.includes("24m"), `expected time in fillText, got ${JSON.stringify(texts)}`);
-  assert.ok(texts.includes("+3"), `expected +N chip in fillText, got ${JSON.stringify(texts)}`);
+  assert.ok(texts.includes("PLAYING"));
+  assert.ok(texts.includes("Counter-Strike 2"));
+  assert.ok(texts.includes("24m"));
+  assert.ok(texts.includes("+2"), `expected +N chip, got ${JSON.stringify(texts)}`);
   const drawImages = calls.filter((c) => c[0] === "drawImage");
   assert.equal(drawImages.length, 3, "three avatars drawn");
 });
 
-test("drawHeroTile uses voice tile background when section is voice", () => {
+test("drawActivityTile uses voice tile background and green time for the voice variant", () => {
   const { ctx, calls } = makeStubCtx();
-  stats.__drawHeroTile(ctx, 0, 0, 600, 400, {
-    section: { key: "voice", emoji: "🎤", memberCount: 8 },
-    row: { display: "General VC", timeStr: "2h", avatars: [], extraCount: 0 },
-    barScale: 120,
-  });
-  const fills = calls.filter((c) => c[0] === "fillStyle").map((c) => c[1]);
-  assert.ok(fills.includes("rgba(28,60,40,0.62)"), "voice tile bg used");
-});
-
-test("drawSmallTile draws name, members, and time", () => {
-  const { ctx, calls } = makeStubCtx();
-  stats.__drawSmallTile(ctx, 0, 0, 240, 120, {
-    section: { key: "listening", title: "Listening", emoji: "🎵", memberCount: 2 },
-    row: { display: "Spotify", timeStr: "47m", memberNames: ["Helms", "Cody"], minutes: 47 },
-    barScale: 134,
-  });
-  const texts = calls.filter((c) => c[0] === "fillText").map((c) => c[1]);
-  assert.ok(texts.includes("Spotify"));
-  assert.ok(texts.includes("47m"));
-  assert.ok(texts.some((t) => t.includes("Helms")));
-});
-
-test("drawSmallTile uses voice tile background and green time for voice", () => {
-  const { ctx, calls } = makeStubCtx();
-  stats.__drawSmallTile(ctx, 0, 0, 240, 120, {
-    section: { key: "voice", title: "Voice", emoji: "🎤", memberCount: 8 },
-    row: { display: "General", timeStr: "2h", memberNames: [], minutes: 120 },
-    barScale: 120,
+  stats.__drawActivityTile(ctx, 0, 0, 920, 168, {
+    variant: "voice",
+    label: "VOICE",
+    title: "General",
+    avatars: [],
+    extraCount: 0,
+    timeStr: "2h",
+    subCaption: "3 in channel",
+    barValue: 1,
   });
   const fills = calls.filter((c) => c[0] === "fillStyle").map((c) => c[1]);
   assert.ok(fills.includes("rgba(28,60,40,0.62)"), "voice tile bg");
   assert.ok(fills.includes("#b8e3a1"), "green time color");
 });
 
-test("drawMemberHeroTile draws rank, name, game line, and big voice time", () => {
+test("drawMemberRankTile draws rank badge, name, game line, and voice time", () => {
   const { ctx, calls } = makeStubCtx();
-  // 47 * 60 = 2820 min = 1d 23h per fmtTime; check for the hours portion "23h".
-  stats.__drawMemberHeroTile(ctx, 0, 0, 400, 232, {
+  // 47 * 60 = 2820 min = 1d 23h per fmtTime; check for the day portion "1d".
+  stats.__drawMemberRankTile(ctx, 0, 0, 176, 168, {
     displayName: "Helms",
     voiceMinutes: 47 * 60,
     topGame: { key: "Counter-Strike 2", minutes: 38 * 60 },
-  }, fakeImage2);
+  }, fakeImage2, 1, 47 * 60);
   const texts = calls.filter((c) => c[0] === "fillText").map((c) => c[1]);
   assert.ok(texts.some((t) => t.includes("1ST")), `expected rank text, got ${JSON.stringify(texts)}`);
   assert.ok(texts.includes("Helms"));
@@ -195,21 +138,17 @@ test("drawMemberHeroTile draws rank, name, game line, and big voice time", () =>
   assert.ok(texts.some((t) => t.includes("1d")), `expected day-formatted voice time, got ${JSON.stringify(texts)}`);
 });
 
-test("drawMemberPodiumTile draws rank label, name, game line, and time", () => {
+test("drawMemberRankTile uses the rank-appropriate badge for ranks 2-5", () => {
   const { ctx, calls } = makeStubCtx();
-  // Use 800×232 (≈400×116 logical at SCALE=2) so the text stack has room to
-  // render without truncation under the stub's measureText heuristic.
-  stats.__drawMemberPodiumTile(ctx, 0, 0, 800, 232, {
+  stats.__drawMemberRankTile(ctx, 0, 0, 176, 168, {
     displayName: "Cody",
     voiceMinutes: 39 * 60,
     topGame: { key: "Spotify", minutes: 15 * 60 },
-  }, fakeImage2, 2);
+  }, fakeImage2, 4, 60 * 60);
   const texts = calls.filter((c) => c[0] === "fillText").map((c) => c[1]);
-  assert.ok(texts.some((t) => t.includes("2ND")));
+  assert.ok(texts.some((t) => t.includes("4TH")));
   assert.ok(texts.includes("Cody"));
   assert.ok(texts.some((t) => t.includes("Spotify")));
-  // 39h = 2340 minutes → days=1, hours=15 → "1d 15h"
-  assert.ok(texts.some((t) => t.includes("1d")), `expected "1d" in time output, got ${JSON.stringify(texts)}`);
 });
 
 test("drawLeaderboardRow draws rank, name, time and a relative bar", () => {
@@ -227,6 +166,26 @@ test("drawLeaderboardRow draws rank, name, time and a relative bar", () => {
   // Bar uses roundRect + fill twice (ghost track + filled portion since 14h/28h > 0).
   const fills = calls.filter((c) => c[0] === "fill");
   assert.ok(fills.length >= 2, `expected ≥2 fill calls for bar, got ${fills.length}`);
+});
+
+test("drawLeaderboardRow places the game label after the name, not overlapping it", () => {
+  const { ctx, calls } = makeFontAwareStubCtx();
+  stats.__drawLeaderboardRow(ctx, 0, 0, 1200, 64, {
+    displayName: "Sarah",
+    voiceMinutes: 14 * 60,
+    topGame: { key: "Minecraft", minutes: 9 * 60 },
+    avatar: fakeImage2,
+  }, 4, 28 * 60);
+  const fillTexts = calls.filter((c) => c[0] === "fillText");
+  const nameCall = fillTexts.find((c) => c[1] === "Sarah");
+  const gameCall = fillTexts.find((c) => String(c[1]).includes("Minecraft"));
+  assert.ok(nameCall && gameCall, "expected both name and game fillText calls");
+  // drawLeaderboardRow's nameFont is `bold ${13 * SCALE}px UI Bold` (SCALE=2).
+  const nameEndX = nameCall[2] + fontWidth("Sarah", "bold 26px UI Bold");
+  assert.ok(
+    gameCall[2] >= nameEndX - 1,
+    `game label x (${gameCall[2]}) should start at/after the name's actual rendered end (${nameEndX}) — regression check for the font-swap-before-measure overlap bug`,
+  );
 });
 
 test("drawOverflowPanel draws header and one row per overflow entry", () => {

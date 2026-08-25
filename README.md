@@ -1,4 +1,4 @@
-# WAV Bot — 10.12.0 (idle drops game roles + Modrinth aliased to Minecraft)
+# WAV Bot — 11.0.0 (dashboard redesign: even top-5 tiles + dedicated voice row)
 
 10.0 adds an owner-only Role Doctor plus activity aliases so mismatched
 presence names can resolve to the right premade role instead of creating
@@ -211,6 +211,57 @@ Env vars: `DISCORD_TOKEN`, `STATS_CHANNEL_ID`, `PANEL_TOKEN`, `PANEL_PORT`
 - `src/events.js` — all `client.on(...)` registrations
 
 ## Changelog
+
+## 11.0.0
+
+Both rendered dashboards (`!stats` and the live activity embed) are
+redesigned around one shared tile language, plus a fix for a name/game
+text overlap and a smarter game-ranking metric.
+
+- **`!stats` top row is now 5 even tiles, not a hero + 2 podium tiles.**
+  Ranks 1-5 get identically-sized cards (avatar, name, top game, 30-day
+  voice time, a bar scaled against #1) instead of #1 getting an
+  oversized hero tile and #2/#3 getting cramped side cards. The ladder
+  below now covers ranks 6-15 (was 4-10) so it stays just as full now
+  that the top row eats 5 spots instead of 3.
+- **Fixed overlapping name/game text in the `!stats` ladder rows.**
+  `drawLeaderboardRow` measured the name's rendered width using the
+  *game label's* font — set moments earlier — instead of the name's own
+  font, so the game text landed under the name's tail on any row where
+  the two fonts render at different widths (visible as "DarkPlaying
+  Palworld · 9h 44m"-style overlap). It now captures the width right
+  after drawing the name, before switching fonts.
+- **Live Activity: voice channels always get their own row.** Previously
+  a voice channel only showed up if it won the single "hero" slot by
+  member count, and every other active channel got buried in the
+  overflow list below. Now every active voice channel — however many —
+  renders as its own even tile in a dedicated "ACTIVE VOICE CHANNELS"
+  row that never competes with games for a slot.
+- **Live Activity: new "TOP GAMES" row, ranked by combined current-player
+  time.** Up to 5 games render as even tiles below voice, using the same
+  tile geometry as the `!stats` top-5 row for visual consistency between
+  the two images. Ranking now sums every simultaneous player's elapsed
+  time instead of taking the longest single session — a game 3 people
+  are playing right now outranks one person's longer solo session, which
+  the old max-based reading couldn't express.
+- `src/tracker.js`: new `sumActiveElapsedMinutes(guildId, type, key,
+  subjectIds)` sums elapsed minutes across every open session instead of
+  taking the max. Used for "playing" rows only — voice keeps the
+  max-based `activeElapsedMinutes` reading, since "in channel" isn't
+  additive the way "playing" is.
+- `src/stats-channel.js`: `collectRows` and `collectSyntheticRows` use
+  `sumActiveElapsedMinutes` for the `playing` section so both tracked
+  and raw/unmatched games rank (and display) by combined time.
+- `src/stats-image.js`: new `computeEvenGrid` (equal-width single-row
+  tiling), `drawMemberRankTile` (the `!stats` top-5 tile), and
+  `drawActivityTile` (the Live Activity voice/game tile — same shell,
+  takes an avatar cluster instead of a single avatar). Removed the now-
+  dead `selectLeader`, `computeBentoGrid`, `drawHeroTile`, and
+  `drawSmallTile` — nothing calls the old hero/bento layout anymore.
+- `tests/`: new coverage for `sumActiveElapsedMinutes` vs
+  `activeElapsedMinutes`, `computeEvenGrid`, `drawActivityTile`,
+  `drawMemberRankTile`, and a regression test for the overlap fix; tests
+  for the removed bento helpers are gone with them.
 
 ## 10.12.0
 

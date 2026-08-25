@@ -87,3 +87,28 @@ test("closeStaleRawSessions: no-op when guild has no sessions", () => {
   tracker.closeStaleRawSessions(guildId, "u1", new Set(), new Set());
   assert.ok(true);
 });
+
+test("sumActiveElapsedMinutes adds every participant's time; activeElapsedMinutes takes the max", () => {
+  const guildId = "g-tracker-7";
+  resetGuildState(guildId);
+
+  tracker.observePresence(guildId, "game", "Palworld", "u1");
+  tracker.observePresence(guildId, "game", "Palworld", "u2");
+  openSessions[guildId]["game|Palworld|u1"].startedAt = Date.now() - 10 * 60_000;
+  openSessions[guildId]["game|Palworld|u2"].startedAt = Date.now() - 4 * 60_000;
+
+  assert.equal(tracker.activeElapsedMinutes(guildId, "game", "Palworld"), 10);
+  assert.equal(tracker.sumActiveElapsedMinutes(guildId, "game", "Palworld"), 14);
+});
+
+test("sumActiveElapsedMinutes respects the subjectIds filter", () => {
+  const guildId = "g-tracker-8";
+  resetGuildState(guildId);
+
+  tracker.observePresence(guildId, "game", "Valorant", "u1");
+  tracker.observePresence(guildId, "game", "Valorant", "u2");
+  openSessions[guildId]["game|Valorant|u1"].startedAt = Date.now() - 8 * 60_000;
+  openSessions[guildId]["game|Valorant|u2"].startedAt = Date.now() - 3 * 60_000;
+
+  assert.equal(tracker.sumActiveElapsedMinutes(guildId, "game", "Valorant", ["u1"]), 8);
+});

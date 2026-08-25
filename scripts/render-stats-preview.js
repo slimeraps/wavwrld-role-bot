@@ -19,6 +19,11 @@ const members = [
   { userId: "8",  displayName: "blunt force", voiceMinutes:  7 * 60, gameMinutes:  5 * 60, topGame: { key: "Helldivers 2",       minutes:  5 * 60 } },
   { userId: "9",  displayName: "cordless",    voiceMinutes:  6 * 60, gameMinutes:  3 * 60, topGame: { key: "Rocket League",      minutes:  3 * 60 } },
   { userId: "10", displayName: "Whiskey",     voiceMinutes:  4 * 60, gameMinutes:  2 * 60, topGame: { key: "Overwatch 2",        minutes:  2 * 60 } },
+  { userId: "11", displayName: "Dark",        voiceMinutes:  3 * 60 + 40, gameMinutes: 9 * 60 + 44, topGame: { key: "Palworld", minutes: 9 * 60 + 44 } },
+  { userId: "12", displayName: "FAKKU",       voiceMinutes:  3 * 60 + 10, gameMinutes: 5 * 60 + 38, topGame: { key: "Call of Duty®: Modern Warfare 4", minutes: 5 * 60 + 38 } },
+  { userId: "13", displayName: "Chayse",      voiceMinutes:  2 * 60 + 50, gameMinutes: 2 * 60 + 14, topGame: { key: "Escape from Tarkov", minutes: 2 * 60 + 14 } },
+  { userId: "14", displayName: "spotlessname8", voiceMinutes: 2 * 60 + 20, gameMinutes: 1 * 60 + 59, topGame: { key: "Stardew Valley", minutes: 1 * 60 + 59 } },
+  { userId: "15", displayName: "Dondo RF",    voiceMinutes:  2 * 60,      gameMinutes: 1 * 60 + 46, topGame: { key: "Rocket League", minutes: 1 * 60 + 46 } },
 ];
 
 const totals = {
