@@ -251,3 +251,85 @@ test("buildLiveActivitySnapshot puts a row containing an active VIP on top", asy
     configModule.config.vipRoleId = "";
   }
 });
+
+test("buildLiveActivitySnapshot excludes an idle member and still ranks the remaining rows by count", async () => {
+  const guildId = "g-rank-3";
+  const idleSolo = makeMember({ id: "u1", displayName: "IdleSolo", status: "idle" });
+  const onlineSolo = makeMember({ id: "u2", displayName: "OnlineSolo" });
+  const duoA = makeMember({ id: "u3", displayName: "DuoA" });
+  const duoB = makeMember({ id: "u4", displayName: "DuoB" });
+
+  // "Playing Idle Game" has one idle member — the row should be dropped
+  // entirely before ranking even runs.
+  const idleRole = makeRole({ id: "r1", name: "Playing Idle Game", members: [idleSolo] });
+  // "Playing Solo Game" has one online member — survives filtering, 1 participant.
+  const soloRole = makeRole({ id: "r2", name: "Playing Solo Game", members: [onlineSolo] });
+  // "Playing Duo Game" has two online members — survives filtering, 2 participants,
+  // and should rank above the solo row.
+  const duoRole = makeRole({ id: "r3", name: "Playing Duo Game", members: [duoA, duoB] });
+  const roles = new Map([["r1", idleRole], ["r2", soloRole], ["r3", duoRole]]);
+  roleMap[guildId] = {
+    "Playing Idle Game": "r1",
+    "Playing Solo Game": "r2",
+    "Playing Duo Game": "r3",
+  };
+
+  const guild = {
+    id: guildId,
+    name: "ComposeGuild",
+    roles: { cache: { get: (id) => roles.get(id) || undefined } },
+    members: { cache: { get: () => undefined } },
+    presences: { cache: { values: () => [].values() } },
+    voiceStates: { cache: { values: () => [].values() } },
+  };
+
+  const snapshot = await buildLiveActivitySnapshot(guild);
+  const playing = snapshot.sections.find((s) => s.key === "playing");
+  const displays = playing.rows.map((r) => r.display);
+
+  assert.ok(!displays.includes("Idle Game"), "the all-idle row should have been dropped before ranking");
+  assert.deepEqual(displays, ["Duo Game", "Solo Game"], "the 2-person row should rank above the 1-person row, with the idle row absent entirely");
+});
+
+test("buildLiveActivitySnapshot ranks two VIP rows by count-then-time, not just VIP presence", async () => {
+  const guildId = "g-rank-4";
+  const configModule = require("../src/config");
+  const vipSoloMember = makeMember({ id: "u1", displayName: "VipSolo" });
+  const vipDuoA = makeMember({ id: "u2", displayName: "VipDuoA" });
+  const vipDuoB = makeMember({ id: "u3", displayName: "VipDuoB" });
+
+  // Both rows contain an active VIP, so the VIP term ties (both true) — the
+  // comparator must fall through to participant count as the next tiebreaker.
+  const vipSoloRole = makeRole({ id: "r1", name: "Playing Vip Solo Game", members: [vipSoloMember] });
+  const vipDuoRole = makeRole({ id: "r2", name: "Playing Vip Duo Game", members: [vipDuoA, vipDuoB] });
+  const roles = new Map([["r1", vipSoloRole], ["r2", vipDuoRole]]);
+  roleMap[guildId] = { "Playing Vip Solo Game": "r1", "Playing Vip Duo Game": "r2" };
+
+  configModule.config.vipRoleId = "vip-role-1";
+  const memberCache = new Map([
+    ["u1", { roles: { cache: new Set(["vip-role-1"]) } }],
+    ["u2", { roles: { cache: new Set(["vip-role-1"]) } }],
+    ["u3", { roles: { cache: new Set([]) } }],
+  ]);
+
+  const guild = {
+    id: guildId,
+    name: "TwoVipGuild",
+    roles: { cache: { get: (id) => roles.get(id) || undefined } },
+    members: { cache: { get: (id) => memberCache.get(id) || undefined } },
+    presences: { cache: { values: () => [].values() } },
+    voiceStates: { cache: { values: () => [].values() } },
+  };
+
+  try {
+    const snapshot = await buildLiveActivitySnapshot(guild);
+    const playing = snapshot.sections.find((s) => s.key === "playing");
+    assert.equal(
+      playing.rows[0].display,
+      "Vip Duo Game",
+      "with both rows containing an active VIP, the 2-person row should win the count tiebreaker",
+    );
+  } finally {
+    configModule.config.vipRoleId = "";
+  }
+});
