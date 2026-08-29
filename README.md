@@ -1,5 +1,7 @@
 # WAV Bot — 11.1.0 (dashboard redesign: even top-5 tiles + dedicated voice row)
 
+**[View the landing page →](https://slimeraps.github.io/wavwrld-role-bot/)**
+
 10.0 adds an owner-only Role Doctor plus activity aliases so mismatched
 presence names can resolve to the right premade role instead of creating
 duplicates. It also adds an Unknown Activity Inbox so unmapped presence
