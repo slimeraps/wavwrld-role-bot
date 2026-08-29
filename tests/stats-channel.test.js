@@ -2,6 +2,8 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { collectRows } = require("../src/stats-channel");
 const { roleMap } = require("../src/state");
+const trackerModule = require("../src/tracker");
+const stateModule = require("../src/state");
 
 // Builds a minimal stub guild that satisfies the surface collectRows touches.
 function makeGuild({ guildId, mapping, roles }) {
@@ -178,4 +180,39 @@ test("buildLiveActivitySnapshot attaches avatars and extraCount per row", async 
   assert.ok(Array.isArray(row.avatars), "row.avatars is an array");
   assert.equal(row.avatars.length, 3, "stack capped at 3");
   assert.equal(row.extraCount, 1, "extraCount = total - 3");
+});
+
+test("buildLiveActivitySnapshot ranks a 2-person row above a longer 1-person row", async () => {
+  const guildId = "g-rank-1";
+  const solo = makeMember({ id: "u1", displayName: "Solo" });
+  const duoA = makeMember({ id: "u2", displayName: "DuoA" });
+  const duoB = makeMember({ id: "u3", displayName: "DuoB" });
+
+  const soloRole = makeRole({ id: "r1", name: "Playing Solo Game", members: [solo] });
+  const duoRole = makeRole({ id: "r2", name: "Playing Duo Game", members: [duoA, duoB] });
+  const roles = new Map([["r1", soloRole], ["r2", duoRole]]);
+  roleMap[guildId] = { "Playing Solo Game": "r1", "Playing Duo Game": "r2" };
+
+  // Give the solo session a much longer elapsed time than the duo session so
+  // a pure minutes-desc sort would (wrongly) put it first.
+  trackerModule.observePresence(guildId, "game", "Playing Solo Game", "u1");
+  trackerModule.observePresence(guildId, "game", "Playing Duo Game", "u2");
+  trackerModule.observePresence(guildId, "game", "Playing Duo Game", "u3");
+  stateModule.openSessions[guildId]["game|Playing Solo Game|u1"].startedAt -= 120 * 60_000;
+  stateModule.openSessions[guildId]["game|Playing Duo Game|u2"].startedAt -= 5 * 60_000;
+  stateModule.openSessions[guildId]["game|Playing Duo Game|u3"].startedAt -= 5 * 60_000;
+
+  const guild = {
+    id: guildId,
+    name: "RankGuild",
+    roles: { cache: { get: (id) => roles.get(id) || undefined } },
+    members: { cache: { get: () => undefined } },
+    presences: { cache: { values: () => [].values() } },
+    voiceStates: { cache: { values: () => [].values() } },
+  };
+
+  const snapshot = await buildLiveActivitySnapshot(guild);
+  const playing = snapshot.sections.find((s) => s.key === "playing");
+  assert.equal(playing.rows[0].display, "Duo Game", "2-person row should outrank the longer 1-person row");
+  assert.equal(playing.rows[1].display, "Solo Game");
 });

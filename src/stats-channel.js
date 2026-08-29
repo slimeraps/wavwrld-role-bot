@@ -391,6 +391,28 @@ async function migrateStaleTimerPrefixes(client) {
   }
 }
 
+// Ranks Live Activity rows within a section: an active VIP always wins (see
+// rowHasActiveVip), then more concurrent participants, then more combined
+// elapsed time, then alphabetical. With config.vipRoleId unset (the
+// default), the VIP check always evaluates false and ranking degrades to
+// count-then-time.
+function rowHasActiveVip(guild, row) {
+  const vipRoleId = config.vipRoleId;
+  if (!vipRoleId) return false;
+  return (row.members || []).some(
+    (m) => guild.members.cache.get(m.id)?.roles?.cache?.has(vipRoleId),
+  );
+}
+
+function compareLiveRows(guild, a, b) {
+  const vipDiff = (rowHasActiveVip(guild, b) ? 1 : 0) - (rowHasActiveVip(guild, a) ? 1 : 0);
+  if (vipDiff !== 0) return vipDiff;
+  const countDiff = (b.members?.length || 0) - (a.members?.length || 0);
+  if (countDiff !== 0) return countDiff;
+  if (b.minutes !== a.minutes) return b.minutes - a.minutes;
+  return a.display.localeCompare(b.display);
+}
+
 // Builds the input shape that renderLiveActivity expects. Resolves member
 // avatars in parallel before returning. Called by the panel's /live/<id>.jpg
 // route.
@@ -432,7 +454,7 @@ async function buildLiveActivitySnapshot(guild) {
     }));
 
     const merged = [...trackedWithAvatars, ...syntheticWithShape].sort(
-      (a, b) => b.minutes - a.minutes || a.display.localeCompare(b.display),
+      (a, b) => compareLiveRows(guild, a, b),
     );
 
     const sectionMemberIds = new Set();
