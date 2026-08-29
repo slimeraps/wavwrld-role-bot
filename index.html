@@ -144,5 +144,34 @@
   </div>
 </section>
 
+<section class="wrap" id="commands">
+  <div class="section-label">Commands</div>
+  <table class="cmds">
+    <thead><tr><th>Command</th><th>Who</th><th>What</th></tr></thead>
+    <tbody>
+      <tr><td><code>/help</code> (<code>!help</code>, <code>!h</code>)</td><td>everyone</td><td>Print the public command reference.</td></tr>
+      <tr><td><code>/stats</code> (<code>!stats</code>, <code>!leaderboard</code>, <code>!lb</code>)</td><td>everyone</td><td>30-day leaderboard PNG.</td></tr>
+      <tr><td><code>/play</code>, <code>/skip</code>, <code>/pause</code>, <code>/resume</code>, <code>/stop</code>, <code>/queue</code>, <code>/nowplaying</code>, <code>/volume</code></td><td>VIP role</td><td>Music player.</td></tr>
+      <tr><td><code>/cleanup</code></td><td>owner</td><td>Full resync of all managed roles.</td></tr>
+      <tr><td><code>/doctor</code></td><td>owner</td><td>Audit duplicate/stale role state; <code>fix:true</code> repairs safe items.</td></tr>
+      <tr><td><code>/unknown</code></td><td>owner</td><td>Show unmapped observed activities; <code>action:clear</code> clears the inbox.</td></tr>
+      <tr><td><code>/premade</code></td><td>owner</td><td>Toggle <code>onlyUsePremadeRoles</code> and resync.</td></tr>
+    </tbody>
+  </table>
+
+  <table class="cmds">
+    <thead><tr><th>Music command</th><th>Aliases</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td><code>play &lt;url-or-search&gt;</code></td><td><code>p</code></td><td>Joins your VC and queues a track. URLs play directly; text searches with multiple matches show a 3-option reaction picker.</td></tr>
+      <tr><td><code>pause</code> / <code>resume</code></td><td>&mdash;</td><td>Pause / resume the current track.</td></tr>
+      <tr><td><code>skip</code></td><td><code>s</code></td><td>Skip the current track.</td></tr>
+      <tr><td><code>stop</code></td><td><code>leave</code></td><td>Stop playback, clear the queue, leave VC.</td></tr>
+      <tr><td><code>queue</code></td><td><code>q</code></td><td>List the upcoming queue (first 10).</td></tr>
+      <tr><td><code>nowplaying</code></td><td><code>np</code></td><td>Current track + progress bar.</td></tr>
+      <tr><td><code>volume [0-200]</code></td><td><code>vol</code></td><td>Set or show volume; saves as the server default.</td></tr>
+    </tbody>
+  </table>
+</section>
+
 </body>
 </html>
