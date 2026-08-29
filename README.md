@@ -212,6 +212,35 @@ Env vars: `DISCORD_TOKEN`, `STATS_CHANNEL_ID`, `PANEL_TOKEN`, `PANEL_PORT`
 
 ## Changelog
 
+## 11.1.0
+
+Live Activity ranking now favors concurrent participants and active VIPs
+over raw duration, and idle ("away") members no longer clutter the image.
+
+- **Idle members are excluded from Playing/Listening/Watching/Other.**
+  `presence.js` already stripped a member's game role on idle, but that's
+  an async side effect with no guarantee it had already fired by render
+  time, and the untracked/raw-activity path had no idle check at all.
+  Both `collectRows` (tracked, role-based rows) and `collectSyntheticRows`
+  (untracked/raw rows) now filter idle members directly at collection
+  time. Voice stays exempt — being connected to a channel is a fact
+  regardless of Discord status.
+- **Rows rank by concurrent participants before elapsed time.** A single
+  member's long solo session no longer outranks a game two or three
+  people just started playing together. Every section — Playing, Voice,
+  Listening, Watching, Other — now ranks by participant count first,
+  falling back to combined elapsed minutes, then display name.
+- **An active VIP's row gets top spot.** If `config.vipRoleId` is set and
+  a row contains a currently-active member holding that role, the row
+  sorts above every non-VIP row regardless of count or time. Unset (the
+  default), this has no effect — ranking is identical to count-then-time.
+- `src/stats-channel.js`: `collectRows`/`collectSyntheticRows` gain the
+  idle filter; `buildLiveActivitySnapshot` gains `rowHasActiveVip` and
+  `compareLiveRows`, replacing the old minutes-only merge sort.
+- `tests/`: new coverage for idle exclusion (both collection paths, plus
+  the voice exemption), count-first ranking, VIP-first ranking including
+  a two-VIP tiebreak, and a combined idle-filter + ranking scenario.
+
 ## 11.0.0
 
 Both rendered dashboards (`!stats` and the live activity embed) are
