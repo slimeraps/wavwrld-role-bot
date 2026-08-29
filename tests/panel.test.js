@@ -39,7 +39,7 @@ function makeGuild({ guildId = "g-test", presences = [], voiceStates = [] } = {}
   };
 }
 
-function makePresence({ memberId, displayName, isBot = false, activities = [] }) {
+function makePresence({ memberId, displayName, isBot = false, activities = [], status = "online" }) {
   return {
     member: {
       id: memberId,
@@ -47,6 +47,7 @@ function makePresence({ memberId, displayName, isBot = false, activities = [] })
       user: { bot: isBot, username: displayName },
     },
     activities,
+    status,
   };
 }
 
@@ -91,6 +92,37 @@ test("1. synthetic playing row created for un-mapped presence activity", () => {
   assert.equal(row.minutes, 0);
   assert.deepEqual(row.memberNames, ["Alice"]);
   assert.deepEqual(row.members, [{ id: "u1", displayName: "Alice", sinceTs: 123 }]);
+});
+
+test("1b. idle presence produces no synthetic playing row", () => {
+  const guild = makeGuild({
+    presences: [
+      makePresence({
+        memberId: "u1",
+        displayName: "Alice",
+        status: "idle",
+        activities: [makeActivity({ type: 0, name: "Cyberpunk 2077" })],
+      }),
+    ],
+  });
+
+  const synth = collectSyntheticRows(guild, EMPTY_TRACKED);
+  assert.equal(synth.playing.length, 0, "idle member's activity should not produce a synthetic row");
+});
+
+test("1c. collectSyntheticRows does not filter voice rows by presence status", () => {
+  // Voice rows are built from guild.voiceStates.cache directly and never
+  // consult presence.status — this documents that idle filtering stays
+  // scoped to playing/listening/watching/other, matching collectRows.
+  const guild = makeGuild({
+    voiceStates: [
+      makeVoiceState({ memberId: "u1", displayName: "Alice", channelName: "General" }),
+    ],
+  });
+
+  const synth = collectSyntheticRows(guild, EMPTY_TRACKED);
+  assert.equal(synth.voice.length, 1);
+  assert.deepEqual(synth.voice[0].memberNames, ["Alice"]);
 });
 
 test("2. synthetic row suppressed when tracked row with same display exists (case-insensitive)", () => {

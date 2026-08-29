@@ -83,6 +83,12 @@ function collectSyntheticRows(guild, trackedRows) {
   for (const presence of guild.presences.cache.values()) {
     const member = presence.member;
     if (!member || member.user?.bot) continue;
+    // Idle ("away") members are excluded from playing/listening/watching/
+    // other synthetic rows — mirrors collectRows' idle filter and closes the
+    // gap where raw/untracked activities had no idle check at all. Voice
+    // states (below) are untouched — being connected to voice stays a fact
+    // regardless of status.
+    if (presence.status === "idle") continue;
 
     for (const activity of presence.activities || []) {
       const section = ACTIVITY_SECTION[activity.type];
