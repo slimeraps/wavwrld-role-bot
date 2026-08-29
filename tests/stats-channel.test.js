@@ -33,12 +33,12 @@ function makeRole({ id, name, members }) {
   };
 }
 
-function makeMember({ id, displayName, isBot = false, activities = [] }) {
+function makeMember({ id, displayName, isBot = false, activities = [], status = "online" }) {
   return {
     id,
     displayName,
     user: { bot: isBot, username: displayName },
-    presence: { activities },
+    presence: { status, activities },
   };
 }
 
@@ -90,6 +90,49 @@ test("collectRows sets sinceTs to null for voice rows", () => {
   const rows = collectRows(guild);
   assert.equal(rows.voice.length, 1);
   assert.equal(rows.voice[0].members[0].sinceTs, null);
+});
+
+test("collectRows excludes idle members from non-voice rows", () => {
+  const guildId = "g-idle-1";
+  const online = makeMember({ id: "u1", displayName: "Online" });
+  const idle = makeMember({ id: "u2", displayName: "Idle", status: "idle" });
+  const role = makeRole({ id: "r1", name: "Playing Rust", members: [online, idle] });
+  const roles = new Map([["r1", role]]);
+
+  roleMap[guildId] = { "Playing Rust": "r1" };
+  const guild = makeGuild({ guildId, mapping: roleMap[guildId], roles });
+
+  const rows = collectRows(guild);
+  assert.equal(rows.playing.length, 1);
+  assert.deepEqual(rows.playing[0].memberNames, ["Online"]);
+  assert.equal(rows.playing[0].count, 1);
+});
+
+test("collectRows drops a row entirely when every member is idle", () => {
+  const guildId = "g-idle-2";
+  const idle = makeMember({ id: "u1", displayName: "Idle", status: "idle" });
+  const role = makeRole({ id: "r1", name: "Playing Rust", members: [idle] });
+  const roles = new Map([["r1", role]]);
+
+  roleMap[guildId] = { "Playing Rust": "r1" };
+  const guild = makeGuild({ guildId, mapping: roleMap[guildId], roles });
+
+  const rows = collectRows(guild);
+  assert.equal(rows.playing.length, 0);
+});
+
+test("collectRows keeps idle members in voice rows", () => {
+  const guildId = "g-idle-3";
+  const idle = makeMember({ id: "u1", displayName: "Idle", status: "idle" });
+  const role = makeRole({ id: "r1", name: "In General", members: [idle] });
+  const roles = new Map([["r1", role]]);
+
+  roleMap[guildId] = { "In General": "r1" };
+  const guild = makeGuild({ guildId, mapping: roleMap[guildId], roles });
+
+  const rows = collectRows(guild);
+  assert.equal(rows.voice.length, 1);
+  assert.deepEqual(rows.voice[0].memberNames, ["Idle"]);
 });
 
 const { buildLiveActivitySnapshot } = require("../src/stats-channel");

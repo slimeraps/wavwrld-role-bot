@@ -213,7 +213,15 @@ function collectRows(guild) {
 
     const cleanName = stripTimerPrefix(roleName);
     const { section, display } = categorize(roleName);
-    const humansArr = [...humans.values()];
+    // Idle ("away") members are excluded from every section except voice —
+    // presence.js already treats idle as "not playing" for role management;
+    // this mirrors that for the rows the Live Activity image renders from.
+    // Being connected to a voice channel stays a fact regardless of status.
+    let humansArr = [...humans.values()];
+    if (section !== "voice") {
+      humansArr = humansArr.filter((m) => m.presence?.status !== "idle");
+    }
+    if (humansArr.length === 0) continue;
     const memberIds = humansArr.map((m) => m.id);
     const source = timerSourceForRole(guildId, roleId, cleanName);
     // Games rank by every current player's combined time (see
@@ -242,7 +250,7 @@ function collectRows(guild) {
       .sort((a, b) => a.displayName.localeCompare(b.displayName));
 
     const timeStr = minutes > 0 ? formatTimerMinutes(minutes) : "—";
-    rows[section].push({ display, minutes, timeStr, count: humans.size, memberNames, memberIds, members, roleId });
+    rows[section].push({ display, minutes, timeStr, count: humansArr.length, memberNames, memberIds, members, roleId });
   }
 
   for (const section of Object.keys(rows)) {
