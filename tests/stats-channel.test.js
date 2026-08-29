@@ -216,3 +216,38 @@ test("buildLiveActivitySnapshot ranks a 2-person row above a longer 1-person row
   assert.equal(playing.rows[0].display, "Duo Game", "2-person row should outrank the longer 1-person row");
   assert.equal(playing.rows[1].display, "Solo Game");
 });
+
+test("buildLiveActivitySnapshot puts a row containing an active VIP on top", async () => {
+  const guildId = "g-rank-2";
+  const configModule = require("../src/config");
+  const casualA = makeMember({ id: "u1", displayName: "CasualA" });
+  const casualB = makeMember({ id: "u2", displayName: "CasualB" });
+  const vipSolo = makeMember({ id: "u3", displayName: "VipSolo" });
+
+  const casualRole = makeRole({ id: "r1", name: "Playing Casual Game", members: [casualA, casualB] });
+  const vipRole = makeRole({ id: "r2", name: "Playing Vip Game", members: [vipSolo] });
+  const roles = new Map([["r1", casualRole], ["r2", vipRole]]);
+  roleMap[guildId] = { "Playing Casual Game": "r1", "Playing Vip Game": "r2" };
+
+  configModule.config.vipRoleId = "vip-role-1";
+  const memberCache = new Map([
+    ["u3", { roles: { cache: new Set(["vip-role-1"]) } }],
+  ]);
+
+  const guild = {
+    id: guildId,
+    name: "VipGuild",
+    roles: { cache: { get: (id) => roles.get(id) || undefined } },
+    members: { cache: { get: (id) => memberCache.get(id) || undefined } },
+    presences: { cache: { values: () => [].values() } },
+    voiceStates: { cache: { values: () => [].values() } },
+  };
+
+  try {
+    const snapshot = await buildLiveActivitySnapshot(guild);
+    const playing = snapshot.sections.find((s) => s.key === "playing");
+    assert.equal(playing.rows[0].display, "Vip Game", "the VIP's 1-person row should outrank the 2-person non-VIP row");
+  } finally {
+    configModule.config.vipRoleId = "";
+  }
+});
