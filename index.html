@@ -82,8 +82,8 @@
   }
   @media (max-width: 600px) {
     .features { grid-template-columns: 1fr; }
-    table.cmds { font-size: 13px; }
-    table.cmds th, table.cmds td { padding: 10px; }
+    table.cmds { font-size: 13px; table-layout: fixed; }
+    table.cmds th, table.cmds td { padding: 10px; word-break: break-word; overflow-wrap: anywhere; }
   }
 </style>
 </head>
