@@ -210,6 +210,8 @@ function register() {
         if (roleId === config.vipRoleId) continue;
         // Skip the fallback role – it must never be promoted
         if (config.fallbackRoleId && roleId === config.fallbackRoleId) continue;
+        // Skip the live role – it's a guild-wide streaming indicator, not a promotable per-activity role
+        if (config.liveRoleId && roleId === config.liveRoleId) continue;
         const role = newMember.guild.roles.cache.get(roleId);
         if (!role) continue;
         await promoteRole(newMember.guild, role);

@@ -6,6 +6,7 @@
   "autoDeleteUnusedRoles":true,
   "fallbackRoleId": "",
   "vipRoleId": "",
+  "liveRoleId": "",
   "monitoringChannelId": "",
   "statsChannelId": "",
   "protectedRoles": [

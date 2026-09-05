@@ -7,6 +7,13 @@ const { checkPromotedRolesEmpty } = require("./promotion");
 const { recordUnknownActivity } = require("./unknown");
 const tracker = require("./tracker");
 
+// Discord's ActivityType.Streaming — used for both Twitch and YouTube
+// integrations. Kept out of the name-based premade/activityRoleMap
+// resolution below so a Streaming activity named e.g. "Twitch" can't
+// collide with a Watching-type activity of the same name (see the LIVE
+// role block at the end of handlePresence).
+const STREAMING_ACTIVITY_TYPE = 1;
+
 // In-flight role creations keyed by `${guildId}:${finalRoleName}`. Concurrent
 // presence handlers for the same activity share one create-promise so we don't
 // race and end up with duplicate "Playing Foo" roles.
@@ -38,6 +45,7 @@ async function handlePresence(presence) {
   // or dnd. Treating idle as "no activities" here lets the existing removal pass
   // below strip whatever role(s) the member currently holds.
   const isIdle = presence.status === "idle";
+  const isLive = !isIdle && presence.activities.some((activity) => activity.type === STREAMING_ACTIVITY_TYPE);
 
   for (const activity of isIdle ? [] : presence.activities) {
     if (!activity?.name) continue;
@@ -53,6 +61,8 @@ async function handlePresence(presence) {
       console.log(`Skipping blacklisted activity: "${activityName}"`);
       continue;
     }
+
+    if (activity.type === STREAMING_ACTIVITY_TYPE) continue;
 
     const hasConfig = hasActivityConfig(activityName);
     if (!hasConfig) recordUnknownActivity(guildId, activityForInbox, member);
@@ -282,6 +292,46 @@ async function handlePresence(presence) {
           } catch (err) {
             console.error(`Failed to remove fallback role from ${member.user.tag}:`, err.message);
             await sendMonitoring(`❌ Failed to remove fallback role \`${fallbackRole.name}\` from ${member.user.tag}: ${err.message}`);
+          }
+        }
+      }
+    }
+  }
+
+  if (config.liveRoleId) {
+    const liveRole = guild.roles.cache.get(config.liveRoleId);
+    if (!liveRole) {
+      console.warn(`Live role ID ${config.liveRoleId} not found in guild ${guild.name}`);
+      await sendMonitoring(`⚠️ Live role ID ${config.liveRoleId} not found in guild **${guild.name}**`);
+    } else if (isLive) {
+      if (!member.roles.cache.has(config.liveRoleId)) {
+        if (config.dryRun) {
+          console.log(`[DRY RUN] Would add live role "${liveRole.name}" to ${member.user.tag}`);
+          await sendMonitoring(`🔗 [DRY RUN] Would add live role \`${liveRole.name}\` to ${member.user.tag}`);
+        } else {
+          try {
+            await member.roles.add(liveRole, "Started streaming");
+            console.log(`+ ${member.user.tag} → ${liveRole.name}`);
+            await sendMonitoring(`➕ **Role added** – \`${liveRole.name}\` assigned to ${member.user.tag} (${member.id}) for streaming`);
+          } catch (err) {
+            console.error(`Failed to add live role to ${member.user.tag}:`, err.message);
+            await sendMonitoring(`❌ Failed to add live role \`${liveRole.name}\` to ${member.user.tag}: ${err.message}`);
+          }
+        }
+      }
+    } else {
+      if (member.roles.cache.has(config.liveRoleId)) {
+        if (config.dryRun) {
+          console.log(`[DRY RUN] Would remove live role "${liveRole.name}" from ${member.user.tag}`);
+          await sendMonitoring(`🔗 [DRY RUN] Would remove live role \`${liveRole.name}\` from ${member.user.tag}`);
+        } else {
+          try {
+            await member.roles.remove(liveRole, "Stopped streaming");
+            console.log(`- ${member.user.tag} → ${liveRole.name} (live)`);
+            await sendMonitoring(`➖ **Role removed** – \`${liveRole.name}\` removed from ${member.user.tag} (${member.id})`);
+          } catch (err) {
+            console.error(`Failed to remove live role from ${member.user.tag}:`, err.message);
+            await sendMonitoring(`❌ Failed to remove live role \`${liveRole.name}\` from ${member.user.tag}: ${err.message}`);
           }
         }
       }
