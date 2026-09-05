@@ -192,6 +192,39 @@ async function cleanupAndResync() {
       }
     }
 
+    let liveRemovedCount = 0;
+    if (config.liveRoleId) {
+      const liveRole = guild.roles.cache.get(config.liveRoleId);
+      if (liveRole) {
+        for (const member of guild.members.cache.values()) {
+          if (member.user.bot) continue;
+          if (!member.roles.cache.has(liveRole.id)) continue;
+          if (config.dryRun) {
+            console.log(`[DRY RUN] Would remove live role "${liveRole.name}" from ${member.user.tag}`);
+            await sendMonitoring(`[DRY RUN] Would remove live role \`${liveRole.name}\` from ${member.user.tag}`);
+            liveRemovedCount++;
+          } else {
+            try {
+              await member.roles.remove(liveRole, "Toggle cleanup – removing live role");
+              console.log(`✓ Removed live role "${liveRole.name}" from ${member.user.tag}`);
+              await sendMonitoring(`✅ Removed live role \`${liveRole.name}\` from ${member.user.tag} (${member.id})`);
+              liveRemovedCount++;
+              await sleep(100);
+            } catch (err) {
+              console.error(`✗ Failed to remove live role from ${member.user.tag}: ${err.message}`);
+              await sendMonitoring(`❌ Failed to remove live role \`${liveRole.name}\` from ${member.user.tag}: ${err.message}`);
+            }
+          }
+        }
+        if (liveRemovedCount > 0) {
+          await sendMonitoring(`🗑️ Removed live role from ${liveRemovedCount} members in **${guild.name}**`);
+        }
+      } else {
+        console.warn(`Live role ID ${config.liveRoleId} not found in ${guild.name}`);
+        await sendMonitoring(`⚠️ Live role ID ${config.liveRoleId} not found in guild **${guild.name}**`);
+      }
+    }
+
     let deletedCount = 0;
     for (const [roleName, roleId] of Object.entries(managedRoleMap)) {
       if (protectedRoles.includes(roleName)) continue;
@@ -225,7 +258,7 @@ async function cleanupAndResync() {
     voiceChannelRoles[guildId] = {};
     if (!config.dryRun) saveData();
 
-    await sendMonitoring(`🧹 Cleanup in **${guild.name}** finished – removed ${removalCount} assignments, removed fallback from ${fallbackRemovedCount}, deleted ${deletedCount} roles.`);
+    await sendMonitoring(`🧹 Cleanup in **${guild.name}** finished – removed ${removalCount} assignments, removed fallback from ${fallbackRemovedCount}, removed live from ${liveRemovedCount}, deleted ${deletedCount} roles.`);
   }
 
   await sendMonitoring("🔄 **Starting full resync** after toggle...");
@@ -242,6 +275,7 @@ async function handleCleanupCmd(ctx) {
   const protectedRolesSet = new Set(config.protectedRoles || []);
   let premadeRemovedCount = 0;
   let fallbackRemovedCount = 0;
+  let liveRemovedCount = 0;
   let deletedCount = 0;
 
   for (const guild of client.guilds.cache.values()) {
@@ -284,6 +318,26 @@ async function handleCleanupCmd(ctx) {
               await sleep(100);
             } catch (err) {
               console.error(`✗ Failed to remove fallback role from ${member.user.tag}:`, err.message);
+            }
+          }
+        }
+      }
+    }
+
+    if (config.liveRoleId) {
+      const liveRole = guild.roles.cache.get(config.liveRoleId);
+      if (liveRole && liveRole.members.size > 0) {
+        for (const member of liveRole.members.values()) {
+          if (member.user.bot) continue;
+          if (config.dryRun) {
+            liveRemovedCount++;
+          } else {
+            try {
+              await member.roles.remove(liveRole, "Cleanup command – remove live role");
+              liveRemovedCount++;
+              await sleep(100);
+            } catch (err) {
+              console.error(`✗ Failed to remove live role from ${member.user.tag}:`, err.message);
             }
           }
         }
@@ -345,8 +399,8 @@ async function handleCleanupCmd(ctx) {
 
   if (!config.dryRun) saveData();
 
-  await ctx.followUp(`✅ Cleanup complete. Removed premade roles from ${premadeRemovedCount} memberships, fallback role from ${fallbackRemovedCount} members, deleted ${deletedCount} bot‑created roles. Re-applying roles...`);
-  await sendMonitoring(`✅ **Cleanup finished** – Premade roles removed from ${premadeRemovedCount} members, fallback from ${fallbackRemovedCount}, ${deletedCount} bot roles deleted. Re-applying roles...`);
+  await ctx.followUp(`✅ Cleanup complete. Removed premade roles from ${premadeRemovedCount} memberships, fallback role from ${fallbackRemovedCount} members, live role from ${liveRemovedCount} members, deleted ${deletedCount} bot‑created roles. Re-applying roles...`);
+  await sendMonitoring(`✅ **Cleanup finished** – Premade roles removed from ${premadeRemovedCount} members, fallback from ${fallbackRemovedCount}, live from ${liveRemovedCount}, ${deletedCount} bot roles deleted. Re-applying roles...`);
   console.log("Re-applying roles after cleanup...");
   await resyncAllMembers();
   await ctx.followUp("✅ Roles re-applied based on current presences and voice states.");
