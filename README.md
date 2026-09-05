@@ -1,4 +1,4 @@
-# WAV Bot — 11.1.0 (dashboard redesign: even top-5 tiles + dedicated voice row)
+# WAV Bot — 11.2.0 (LIVE role for streamers)
 
 **[View the landing page →](https://slimeraps.github.io/wavwrld-role-bot/)**
 
@@ -218,6 +218,34 @@ Env vars: `DISCORD_TOKEN`, `STATS_CHANNEL_ID`, `PANEL_TOKEN`, `PANEL_PORT`
 - `src/events.js` — all `client.on(...)` registrations
 
 ## Changelog
+
+## 11.2.0
+
+A dedicated LIVE role for members actively streaming, so broadcasting to
+Twitch/YouTube is no longer indistinguishable from just watching a stream.
+
+- **New `config.liveRoleId`.** When set, members holding a Streaming-type
+  activity (Discord's `ActivityType.Streaming`, e.g. a Twitch/YouTube
+  broadcast) get this role; it's removed the moment they stop streaming.
+  Unset (the default), this has no effect. Like `vipRoleId`/
+  `fallbackRoleId`, the bot never creates, renames, or deletes this role —
+  create it once in Discord and set its ID.
+- **Streaming no longer collides with name-based "Watching" roles.**
+  Previously `Playing`/premade role resolution matched by activity *name*
+  only, so a Streaming-type activity named e.g. "Twitch" got the same
+  premade role as someone genuinely watching an embedded Twitch stream
+  (Watching-type, `type: 3`). Streaming-type activities are now skipped
+  from that name-based resolution entirely and handled solely by
+  `liveRoleId`, so "Watching Twitch" now only ever reflects actual
+  Watching-type activity.
+- LIVE is additive — a member streaming a game keeps whatever role their
+  `Playing` activity earns them, plus LIVE.
+- `src/presence.js`: new `STREAMING_ACTIVITY_TYPE` constant, `isLive`
+  presence check, and a `liveRoleId` add/remove block mirroring the
+  existing `fallbackRoleId` block.
+- `tests/`: new `tests/presence.test.js` covering LIVE grant/revoke
+  alongside an unrelated playing role, and regression guards for
+  Watching-type resolution and an unset `liveRoleId`.
 
 ## 11.1.0
 
