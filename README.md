@@ -168,6 +168,11 @@ commands are deliberately omitted from `/help`.
 - `token` — Discord bot token (overridden by `DISCORD_TOKEN` env).
 - `ownerId` — user ID for owner-only commands.
 - `vipRoleId` — role ID required for music commands.
+- `liveRoleId` — role ID granted while a member has a Streaming-type
+  activity (e.g. broadcasting to Twitch/YouTube); removed when they stop.
+  Unset (the default) disables this feature. The bot never creates,
+  renames, or deletes this role — create it once in Discord and set its ID
+  here, same as `vipRoleId`/`fallbackRoleId`.
 - `monitoringChannelId` — channel for bot-action audit messages.
 - `statsChannelId` — channel for the live activity embed (overridden by
   `STATS_CHANNEL_ID`).
