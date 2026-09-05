@@ -331,7 +331,7 @@ async function handlePresence(presence) {
             await sendMonitoring(`➖ **Role removed** – \`${liveRole.name}\` removed from ${member.user.tag} (${member.id})`);
           } catch (err) {
             console.error(`Failed to remove live role from ${member.user.tag}:`, err.message);
-            await sendMonitoring(`❌ Failed to remove live role \`${liveRole.name}\` to ${member.user.tag}: ${err.message}`);
+            await sendMonitoring(`❌ Failed to remove live role \`${liveRole.name}\` from ${member.user.tag}: ${err.message}`);
           }
         }
       }
