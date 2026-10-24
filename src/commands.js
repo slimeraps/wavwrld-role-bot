@@ -212,10 +212,10 @@ const COMMANDS = [
   },
   {
     name: "doctor",
-    description: "Owner-only: audit and repair activity role tracking",
+    description: "Owner-only: find duplicate bot roles",
     needsOwner: true,
     options: [
-      { name: "fix", type: ApplicationCommandOptionType.Boolean, required: false, description: "Delete safe duplicates and prune stale tracking" },
+      { name: "fix", type: ApplicationCommandOptionType.Boolean, required: false, description: "Delete every duplicate copy except premade roles" },
     ],
     parseText: (args) => ({ fix: args.some((arg) => ["fix", "--fix", "true", "yes"].includes(String(arg).toLowerCase())) }),
     parseSlash: (i) => ({ fix: !!i.options.getBoolean("fix") }),

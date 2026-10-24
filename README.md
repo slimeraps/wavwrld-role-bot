@@ -1,4 +1,4 @@
-# WAV Bot — 11.2.0 (LIVE role for streamers)
+# WAV Bot — 12.0.0 (Role Doctor rework)
 
 **[View the landing page →](https://slimeraps.github.io/wavwrld-role-bot/)**
 
@@ -154,7 +154,7 @@ across cleanup so memory survives the restart.
 | `/stats` (`!stats`, `!leaderboard`, `!lb`) | everyone | 30-day leaderboard PNG. |
 | `/play`, `/skip`, `/pause`, `/resume`, `/stop`, `/queue`, `/nowplaying`, `/volume` | VIP role | Music player. |
 | `/cleanup` | owner | Full resync of all managed roles. |
-| `/doctor` | owner | Audit duplicate/stale role state; `fix:true` repairs safe items. |
+| `/doctor` | owner | Find duplicate bot roles; `fix:true` deletes every copy except premade ones. |
 | `/unknown` | owner | Show unmapped observed activities; `action:clear` clears the inbox. |
 | `/premade` | owner | Toggle `onlyUsePremadeRoles` and resync. |
 
@@ -208,7 +208,8 @@ Env vars: `DISCORD_TOKEN`, `STATS_CHANNEL_ID`, `PANEL_TOKEN`, `PANEL_PORT`
   reposition)
 - `src/cleanup.js` — `cleanup` and `premade` resync logic; also drops orphan
   voice roles
-- `src/doctor.js` — owner-only role audit and safe repair helpers
+- `src/doctor.js` — Role Doctor core: duplicate audit, fix, report text
+- `src/doctor-cmd.js` — owner-only `/doctor` command (fix + per-guild resync)
 - `src/unknown.js` — Unknown Activity Inbox recorder and owner command
 - `src/music.js` — music player init, queue commands, reaction picker
 - `src/stats.js` — `logActivity()` counters and the `/stats` embed
@@ -218,6 +219,48 @@ Env vars: `DISCORD_TOKEN`, `STATS_CHANNEL_ID`, `PANEL_TOKEN`, `PANEL_PORT`
 - `src/events.js` — all `client.on(...)` registrations
 
 ## Changelog
+
+## 12.0.0
+
+The Role Doctor is rebuilt around one job: deleting duplicate roles. The
+old fix mode skipped any duplicate group with no premade or tracked role
+to keep — exactly the orphaned `Playing Gemini` ×6 case — so duplicates
+piled up. `!cleanup` didn't help either, since it only deletes roles it
+has a `roleMap` entry for.
+
+- **New keep rule.** Bot-style roles (`Playing X`, `In X`) are grouped by
+  name (case and old timer prefixes ignored). In any group of two or
+  more, only keepers survive: premade roles, the `fallbackRoleId` /
+  `liveRoleId` / `vipRoleId` roles, and the tracked role for a voice
+  channel that still exists. A group with no keeper loses **every** copy;
+  the resync afterwards creates one fresh role. Single roles, human-made
+  roles, `protectedRoles`, managed roles and `@everyone` are never touched.
+- **Voice exemption.** Two voice channels can sanitize to the same
+  `In X` name; their tracked roles are both kept, so `/doctor` can come
+  back clean.
+- **`!cleanup` runs the doctor first,** so untracked duplicate copies no
+  longer survive a cleanup. The summary adds "doctor removed N duplicate
+  roles".
+- **`/doctor fix:true`** deletes duplicates 500ms apart, keeps going past
+  failures (listed with reasons, e.g. a role above the bot), prunes stale
+  `roleMap` / `autoManaged` / voice / promoted / position records, then
+  re-applies roles for the current server. One monitoring message per
+  run instead of an "External deletion" line per role.
+- **`dryRun` is respected:** fix reports "would delete N" and changes
+  nothing.
+- **Report** leads with a summary line
+  (`14 duplicate groups · 52 roles to delete · 2 kept`) and stays under
+  Discord's message limit on huge servers.
+- **Removed:** alias suggestions (they mostly suggested aliasing a role
+  to itself, and following one created a new duplicate of a premade
+  role) and the missing-premade report.
+- `src/doctor.js` is now a reply-free core (`auditGuild`, `fixGuild`,
+  `formatAuditReport`, `formatFixReport`); the command moved to
+  `src/doctor-cmd.js`. `src/cleanup.js` gains `resyncGuild(guild)`.
+- `tests/`: new `doctor.test.js`, `doctor-cmd.test.js`,
+  `cleanup-doctor.test.js`.
+
+After deploy: run `/doctor` to preview, then `/doctor fix:true`.
 
 ## 11.2.0
 
