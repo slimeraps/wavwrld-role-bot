@@ -152,9 +152,55 @@ async function fixGuild(guild, audit, { dryRun = config.dryRun, gapMs = 500 } = 
   return { dryRun, deleted, failed, pruned: staleCount, changed };
 }
 
+const REPORT_BUDGET = 1900;
+
+// Joins head + as many body lines as fit, then a "… and N more <noun>" line,
+// then tail. Head and tail are always kept so the summary never gets cut.
+function fitLines(head, body, tail, noun) {
+  const size = (lines) => lines.join("\n").length;
+  const fixed = size([...head, ...tail]) + `\n… and ${body.length} more ${noun}`.length + 1;
+  const shown = [];
+  let used = fixed;
+  for (const line of body) {
+    if (used + line.length + 1 > REPORT_BUDGET) break;
+    shown.push(line);
+    used += line.length + 1;
+  }
+  const more = body.length - shown.length;
+  return [...head, ...shown, ...(more ? [`… and ${more} more ${noun}`] : []), ...tail].join("\n");
+}
+
+function formatAuditReport(audit) {
+  const header = `Role Doctor - ${audit.guild.name}`;
+  if (!audit.groups.length && !audit.staleCount) return `${header}\nNo duplicate roles found.`;
+
+  const head = [
+    header,
+    `${audit.groups.length} duplicate groups · ${audit.toDeleteCount} roles to delete · ${audit.keptCount} kept`,
+    "",
+  ];
+  const body = audit.groups.map((group) => (group.keep.length
+    ? `${group.name} — ${group.keep.map((k) => `keep ${k.reason} ${k.id}`).join(", ")}, delete ${group.remove.length}`
+    : `${group.name} — ${group.remove.length} copies, delete all`));
+  const tail = [];
+  if (audit.staleCount) tail.push("", `Stale records: ${audit.staleCount}`);
+  tail.push("", "Run `/doctor fix:true` to fix.");
+  return fitLines(head, body, tail, "groups");
+}
+
+function formatFixReport(result, { resynced = false } = {}) {
+  const head = [result.dryRun
+    ? `Dry run: would delete ${result.deleted.length} duplicate roles.`
+    : `Deleted ${result.deleted.length} duplicate roles.`];
+  if (result.pruned) head.push(`Pruned ${result.pruned} stale records.`);
+  if (resynced) head.push("Roles re-applied from current activity.");
+  const body = result.failed.map((f) => `Could not delete ${f.name} (${f.id}): ${f.reason}`);
+  return fitLines(head, body, [], "failures");
+}
+
 // Temporary until doctor-cmd.js lands.
 async function doctorCmd(ctx) {
   await ctx.reply("Doctor is being rebuilt.");
 }
 
-module.exports = { auditGuild, fixGuild, doctorCmd };
+module.exports = { auditGuild, fixGuild, formatAuditReport, formatFixReport, doctorCmd };

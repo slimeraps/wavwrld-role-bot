@@ -3,7 +3,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { auditGuild, fixGuild } = require("../src/doctor");
+const { auditGuild, fixGuild, formatAuditReport, formatFixReport } = require("../src/doctor");
 const configModule = require("../src/config");
 const { roleMap, autoManaged, voiceChannelRoles, promotedRoles, originalPositions } = require("../src/state");
 
@@ -314,4 +314,75 @@ test("stale records are pruned", async () => {
   assert.deepEqual(promotedRoles.f5, []);
   assert.deepEqual(originalPositions.f5, {});
   assert.equal(result.changed, true);
+});
+
+// ── report formatting ────────────────────────────────────────────────────────
+
+function emptyStale() {
+  return { roleMap: [], autoManaged: [], voice: [], promoted: [], positions: [] };
+}
+
+function sampleAudit() {
+  return {
+    guild: { name: "Test Guild" },
+    groups: [
+      { name: "Playing Gemini", keep: [], remove: [{ id: "a" }, { id: "b" }, { id: "c" }] },
+      { name: "Playing Tarkov", keep: [{ id: "p1", reason: "premade" }], remove: [{ id: "d1" }, { id: "d2" }] },
+    ],
+    toDeleteCount: 5,
+    keptCount: 1,
+    stale: emptyStale(),
+    staleCount: 0,
+  };
+}
+
+test("summary line comes second", () => {
+  const lines = formatAuditReport(sampleAudit()).split("\n");
+  assert.equal(lines[0], "Role Doctor - Test Guild");
+  assert.equal(lines[1], "2 duplicate groups · 5 roles to delete · 1 kept");
+});
+
+test("nothing to do shows no hint", () => {
+  const text = formatAuditReport({
+    guild: { name: "Test Guild" }, groups: [], toDeleteCount: 0, keptCount: 0, stale: emptyStale(), staleCount: 0,
+  });
+  assert.ok(text.includes("No duplicate roles found."));
+  assert.ok(!text.includes("/doctor fix:true"));
+});
+
+test("group lines use exact copy", () => {
+  const text = formatAuditReport({ ...sampleAudit(), staleCount: 2 });
+  assert.ok(text.includes("Playing Tarkov — keep premade p1, delete 2"));
+  assert.ok(text.includes("Playing Gemini — 3 copies, delete all"));
+  assert.ok(text.includes("Stale records: 2"));
+  assert.ok(text.includes("Run `/doctor fix:true` to fix."));
+});
+
+test("report stays under 1900 chars with 300 groups", () => {
+  const groups = Array.from({ length: 300 }, (_, i) => ({
+    name: `Playing Some Long Game Name ${i}`, keep: [], remove: [{ id: "x" }, { id: "y" }],
+  }));
+  const text = formatAuditReport({
+    guild: { name: "Test Guild" }, groups, toDeleteCount: 600, keptCount: 0, stale: emptyStale(), staleCount: 0,
+  });
+  const lines = text.split("\n");
+  assert.ok(text.length <= 1900, `length ${text.length}`);
+  assert.equal(lines[1], "300 duplicate groups · 600 roles to delete · 0 kept");
+  assert.ok(lines.some((line) => /^… and \d+ more groups$/.test(line)));
+});
+
+test("fix report covers dryRun, failures and resync", () => {
+  const real = formatFixReport(
+    { dryRun: false, deleted: [{ id: "a" }, { id: "b" }], failed: [{ id: "c", name: "Playing X", reason: "nope" }], pruned: 3 },
+    { resynced: true },
+  );
+  assert.ok(real.includes("Deleted 2 duplicate roles."));
+  assert.ok(real.includes("Pruned 3 stale records."));
+  assert.ok(real.includes("Could not delete Playing X (c): nope"));
+  assert.ok(real.includes("Roles re-applied from current activity."));
+
+  const dry = formatFixReport({ dryRun: true, deleted: [{ id: "a" }, { id: "b" }], failed: [], pruned: 0 });
+  assert.ok(dry.includes("Dry run: would delete 2 duplicate roles."));
+  assert.ok(!dry.includes("Pruned"));
+  assert.ok(!dry.includes("re-applied"));
 });
