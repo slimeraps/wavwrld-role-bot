@@ -6,6 +6,7 @@ const { roleMap, autoManaged, promotedRoles, originalPositions, voiceChannelRole
 const { handlePresence } = require("./presence");
 const { initVoiceRolesForGuild } = require("./voice");
 const { renameRoleThrottled } = require("./timers");
+const { auditGuild, fixGuild } = require("./doctor");
 
 function isBotCreatedManagedRole(guildId, roleId, roleName) {
   if (!roleId || premadeRoleIdsSet.has(roleId)) return false;
@@ -281,9 +282,20 @@ async function handleCleanupCmd(ctx) {
   let fallbackRemovedCount = 0;
   let liveRemovedCount = 0;
   let deletedCount = 0;
+  let doctorRemovedCount = 0;
+  let doctorFailedCount = 0;
 
   for (const guild of client.guilds.cache.values()) {
     const guildId = guild.id;
+
+    // Untracked duplicate copies would otherwise survive cleanup, which only
+    // deletes roles it has a roleMap entry for.
+    const doctorResult = await fixGuild(guild, await auditGuild(guild));
+    doctorRemovedCount += doctorResult.deleted.length;
+    doctorFailedCount += doctorResult.failed.length;
+    for (const failure of doctorResult.failed) {
+      console.error(`✗ Role Doctor could not delete "${failure.name}" (${failure.id}) in ${guild.name}: ${failure.reason}`);
+    }
 
     for (const roleId of Object.values(config.premadeRoleIds || {})) {
       const role = guild.roles.cache.get(roleId);
@@ -403,8 +415,9 @@ async function handleCleanupCmd(ctx) {
 
   if (!config.dryRun) saveData();
 
-  await ctx.followUp(`✅ Cleanup complete. Removed premade roles from ${premadeRemovedCount} memberships, fallback role from ${fallbackRemovedCount} members, live role from ${liveRemovedCount} members, deleted ${deletedCount} bot‑created roles. Re-applying roles...`);
-  await sendMonitoring(`✅ **Cleanup finished** – Premade roles removed from ${premadeRemovedCount} members, fallback from ${fallbackRemovedCount}, live from ${liveRemovedCount}, ${deletedCount} bot roles deleted. Re-applying roles...`);
+  const doctorSummary = `, doctor removed ${doctorRemovedCount} duplicate roles${doctorFailedCount ? ` (${doctorFailedCount} failed)` : ""}`;
+  await ctx.followUp(`✅ Cleanup complete. Removed premade roles from ${premadeRemovedCount} memberships, fallback role from ${fallbackRemovedCount} members, live role from ${liveRemovedCount} members, deleted ${deletedCount} bot‑created roles${doctorSummary}. Re-applying roles...`);
+  await sendMonitoring(`✅ **Cleanup finished** – Premade roles removed from ${premadeRemovedCount} members, fallback from ${fallbackRemovedCount}, live from ${liveRemovedCount}, ${deletedCount} bot roles deleted${doctorSummary}. Re-applying roles...`);
   console.log("Re-applying roles after cleanup...");
   await resyncAllMembers();
   await ctx.followUp("✅ Roles re-applied based on current presences and voice states.");
