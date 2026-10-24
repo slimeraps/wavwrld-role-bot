@@ -2,24 +2,6 @@
 
 **[View the landing page →](https://slimeraps.github.io/wavwrld-role-bot/)**
 
-10.0 adds an owner-only Role Doctor plus activity aliases so mismatched
-presence names can resolve to the right premade role instead of creating
-duplicates. It also adds an Unknown Activity Inbox so unmapped presence
-names are visible before they become cleanup work. The 9.7 live activity
-embed work remains: 9.7 ended the `[Xh Ym] Playing Foo` role-name prefix
-experiment. Discord
-caps role renames at ~2 per 10 min per role, so encoding a ticking timer
-in the role name was fundamentally rate-limited — every minute tick
-risked stalling and every restart doubled the rename load. The live
-activity surface now lives in a single auto-updating embed in a dedicated
-stats channel. Roles stay named cleanly (`Playing Rust`), and the embed
-shows time per activity, member count, and who is in it.
-
-A separate desktop console at `../wav-bot-console/` ships in tandem
-(v0.1 released same day as bot 10.6.0) — a Windows Electron app that
-polls the `/api/activity` panel endpoint and renders a live native
-view of guild activity with optional toast notifications.
-
 ## What this bot does
 
 WAV Bot is a multi-purpose Discord bot for a single guild that does four
