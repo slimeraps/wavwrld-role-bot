@@ -119,7 +119,15 @@ async function fixGuild(guild, audit, { dryRun = config.dryRun, gapMs = 500 } = 
   for (const entry of audit.groups.flatMap((group) => group.remove)) {
     const role = guild.roles.cache.get(entry.id);
     if (!role) continue;
-    if (!role.editable) {
+    let editable;
+    try {
+      // Real Role.editable throws when the bot's own member isn't cached.
+      editable = role.editable;
+    } catch (err) {
+      failed.push({ id: role.id, name: role.name, reason: err.message });
+      continue;
+    }
+    if (!editable) {
       failed.push({ id: role.id, name: role.name, reason: "role is above the bot or not editable" });
       continue;
     }

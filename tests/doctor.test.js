@@ -283,6 +283,20 @@ test("dryRun still reports non-editable roles as failures", async () => {
   assert.deepEqual(ids(result.deleted), ["b"]);
 });
 
+test("throwing editable getter is recorded and run continues", async () => {
+  resetGuildState("f7");
+  const deletedIds = [];
+  const { guild } = geminiGuild("f7", { onDelete: (id) => deletedIds.push(id) });
+  // Real Role.editable reads guild.members.resolve(client.user) and throws
+  // when the bot's own member isn't cached.
+  Object.defineProperty(guild.roles.cache.get("a"), "editable", {
+    get() { throw new TypeError("Cannot read properties of null (reading 'permissions')"); },
+  });
+  const result = await fixGuild(guild, await auditGuild(guild), { dryRun: false, gapMs: 0 });
+  assert.deepEqual(ids(result.failed), ["a"]);
+  assert.deepEqual(deletedIds, ["b"]);
+});
+
 test("delete error is recorded and run continues", async () => {
   resetGuildState("f4");
   const deletedIds = [];
