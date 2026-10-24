@@ -6,6 +6,7 @@ const { roleMap, autoManaged, promotedRoles, originalPositions, voiceChannelRole
 const { handlePresence } = require("./presence");
 const { initVoiceRolesForGuild } = require("./voice");
 const { renameRoleThrottled } = require("./timers");
+const { auditGuild, fixGuild } = require("./doctor");
 
 function isBotCreatedManagedRole(guildId, roleId, roleName) {
   if (!roleId || premadeRoleIdsSet.has(roleId)) return false;
@@ -71,36 +72,40 @@ async function cleanupEmptyManagedRoles(guild) {
   }
 }
 
+async function resyncGuild(guild) {
+  const botMember = guild.members.me;
+  if (!botMember || !botMember.permissions.has("ManageRoles")) {
+    console.warn(`Skipping guild ${guild.name} – missing permissions.`);
+    return;
+  }
+
+  try {
+    await guild.members.fetch();
+  } catch (err) {
+    console.error(`Failed to fetch members in ${guild.name}:`, err.message);
+    return;
+  }
+
+  let processed = 0;
+  for (const member of guild.members.cache.values()) {
+    if (member.user.bot) continue;
+    if (!member.presence) continue;
+    await handlePresence(member.presence);
+    processed++;
+    await sleep(100);
+  }
+  console.log(`Resynced ${processed} members in ${guild.name}`);
+  await sendMonitoring(`✅ Resynced ${processed} members in **${guild.name}**`);
+
+  await initVoiceRolesForGuild(guild);
+}
+
 async function resyncAllMembers() {
   console.log("Starting full presence resync...");
   await sendMonitoring("🔄 **Resyncing all member presences** – re‑evaluating roles based on current `onlyUsePremadeRoles` setting.");
 
   for (const guild of client.guilds.cache.values()) {
-    const botMember = guild.members.me;
-    if (!botMember || !botMember.permissions.has("ManageRoles")) {
-      console.warn(`Skipping guild ${guild.name} – missing permissions.`);
-      continue;
-    }
-
-    try {
-      await guild.members.fetch();
-    } catch (err) {
-      console.error(`Failed to fetch members in ${guild.name}:`, err.message);
-      continue;
-    }
-
-    let processed = 0;
-    for (const member of guild.members.cache.values()) {
-      if (member.user.bot) continue;
-      if (!member.presence) continue;
-      await handlePresence(member.presence);
-      processed++;
-      await sleep(100);
-    }
-    console.log(`Resynced ${processed} members in ${guild.name}`);
-    await sendMonitoring(`✅ Resynced ${processed} members in **${guild.name}**`);
-
-    await initVoiceRolesForGuild(guild);
+    await resyncGuild(guild);
   }
 
   console.log("Full presence resync completed.");
@@ -266,6 +271,17 @@ async function cleanupAndResync() {
   await sendMonitoring("✅ **Toggle resync complete** – all roles reassigned according to new configuration.");
 }
 
+// A long cleanup can outlive the 15-minute interaction token; a thrown
+// followUp must not skip the resync and leave every member stripped.
+async function followUpOrSend(ctx, text) {
+  try {
+    await ctx.followUp(text);
+  } catch (err) {
+    console.warn(`Cleanup followUp failed (${err.message}); sending to channel instead.`);
+    await ctx.channel?.send(text);
+  }
+}
+
 async function handleCleanupCmd(ctx) {
   await ctx.defer();
   await ctx.reply("🧹 Removing premade roles and fallback/active role from all members, then cleaning up bot‑created roles...");
@@ -277,9 +293,26 @@ async function handleCleanupCmd(ctx) {
   let fallbackRemovedCount = 0;
   let liveRemovedCount = 0;
   let deletedCount = 0;
+  let doctorRemovedCount = 0;
+  let doctorFailedCount = 0;
 
   for (const guild of client.guilds.cache.values()) {
     const guildId = guild.id;
+
+    // Untracked duplicate copies would otherwise survive cleanup, which only
+    // deletes roles it has a roleMap entry for.
+    // A doctor error must not abort cleanup halfway through the guild loop.
+    try {
+      const doctorResult = await fixGuild(guild, await auditGuild(guild));
+      doctorRemovedCount += doctorResult.deleted.length;
+      doctorFailedCount += doctorResult.failed.length;
+      for (const failure of doctorResult.failed) {
+        console.error(`✗ Role Doctor could not delete "${failure.name}" (${failure.id}) in ${guild.name}: ${failure.reason}`);
+      }
+    } catch (err) {
+      console.error(`✗ Role Doctor failed in ${guild.name}:`, err.message);
+      await sendMonitoring(`❌ Role Doctor failed in **${guild.name}** during cleanup: ${err.message}`);
+    }
 
     for (const roleId of Object.values(config.premadeRoleIds || {})) {
       const role = guild.roles.cache.get(roleId);
@@ -399,17 +432,19 @@ async function handleCleanupCmd(ctx) {
 
   if (!config.dryRun) saveData();
 
-  await ctx.followUp(`✅ Cleanup complete. Removed premade roles from ${premadeRemovedCount} memberships, fallback role from ${fallbackRemovedCount} members, live role from ${liveRemovedCount} members, deleted ${deletedCount} bot‑created roles. Re-applying roles...`);
-  await sendMonitoring(`✅ **Cleanup finished** – Premade roles removed from ${premadeRemovedCount} members, fallback from ${fallbackRemovedCount}, live from ${liveRemovedCount}, ${deletedCount} bot roles deleted. Re-applying roles...`);
+  const doctorSummary = `, doctor removed ${doctorRemovedCount} duplicate roles${doctorFailedCount ? ` (${doctorFailedCount} failed)` : ""}`;
+  await followUpOrSend(ctx, `✅ Cleanup complete. Removed premade roles from ${premadeRemovedCount} memberships, fallback role from ${fallbackRemovedCount} members, live role from ${liveRemovedCount} members, deleted ${deletedCount} bot‑created roles${doctorSummary}. Re-applying roles...`);
+  await sendMonitoring(`✅ **Cleanup finished** – Premade roles removed from ${premadeRemovedCount} members, fallback from ${fallbackRemovedCount}, live from ${liveRemovedCount}, ${deletedCount} bot roles deleted${doctorSummary}. Re-applying roles...`);
   console.log("Re-applying roles after cleanup...");
   await resyncAllMembers();
-  await ctx.followUp("✅ Roles re-applied based on current presences and voice states.");
+  await followUpOrSend(ctx, "✅ Roles re-applied based on current presences and voice states.");
 }
 
 module.exports = {
   cleanupEmptyManagedRoles,
   deleteEmptyBotCreatedRole,
   resyncAllMembers,
+  resyncGuild,
   cleanupAndResync,
   handleCleanupCmd,
   isBotCreatedManagedRole,
