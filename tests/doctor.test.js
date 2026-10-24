@@ -3,7 +3,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { auditGuild } = require("../src/doctor");
+const { auditGuild, fixGuild } = require("../src/doctor");
 const configModule = require("../src/config");
 const { roleMap, autoManaged, voiceChannelRoles, promotedRoles, originalPositions } = require("../src/state");
 
@@ -222,4 +222,96 @@ test("stale records are listed", async () => {
   assert.deepEqual(audit.stale.promoted, ["missing3"]);
   assert.deepEqual(audit.stale.positions, ["missing4"]);
   assert.equal(audit.staleCount, 5);
+});
+
+// ── fixGuild ─────────────────────────────────────────────────────────────────
+
+function geminiGuild(guildId, extra = {}) {
+  roleMap[guildId] = { "Playing Gemini": "a" };
+  autoManaged[guildId] = new Set(["Playing Gemini"]);
+  const deletedIds = [];
+  const onDelete = extra.onDelete || ((id) => deletedIds.push(id));
+  const roles = [
+    makeRole({ id: "a", name: "Playing Gemini", onDelete, ...(extra.a || {}) }),
+    makeRole({ id: "b", name: "Playing Gemini", onDelete, ...(extra.b || {}) }),
+  ];
+  return { guild: makeGuild({ id: guildId, roles }), deletedIds };
+}
+
+test("deletes every remove entry and untracks first", async () => {
+  resetGuildState("f1");
+  const seenTracked = [];
+  const { guild } = geminiGuild("f1", {
+    onDelete: (id) => seenTracked.push(Object.values(roleMap.f1).includes(id)),
+  });
+  const result = await fixGuild(guild, await auditGuild(guild), { dryRun: false, gapMs: 0 });
+  assert.deepEqual(ids(result.deleted).sort(), ["a", "b"]);
+  assert.deepEqual(seenTracked, [false, false]);
+  assert.equal(result.changed, true);
+  assert.equal(result.failed.length, 0);
+});
+
+test("dryRun deletes nothing and changes no state", async () => {
+  resetGuildState("f2");
+  const { guild, deletedIds } = geminiGuild("f2");
+  const before = JSON.stringify(roleMap.f2);
+  const result = await fixGuild(guild, await auditGuild(guild), { dryRun: true, gapMs: 0 });
+  assert.deepEqual(deletedIds, []);
+  assert.equal(JSON.stringify(roleMap.f2), before);
+  assert.ok(autoManaged.f2.has("Playing Gemini"));
+  assert.equal(result.deleted.length, 2);
+  assert.equal(result.changed, false);
+  assert.equal(result.dryRun, true);
+});
+
+test("non-editable role is reported and run continues", async () => {
+  resetGuildState("f3");
+  const { guild, deletedIds } = geminiGuild("f3", { a: { editable: false } });
+  const result = await fixGuild(guild, await auditGuild(guild), { dryRun: false, gapMs: 0 });
+  assert.equal(result.failed.length, 1);
+  assert.equal(result.failed[0].id, "a");
+  assert.equal(result.failed[0].reason, "role is above the bot or not editable");
+  assert.deepEqual(deletedIds, ["b"]);
+  assert.deepEqual(ids(result.deleted), ["b"]);
+});
+
+test("dryRun still reports non-editable roles as failures", async () => {
+  resetGuildState("f6");
+  const { guild } = geminiGuild("f6", { a: { editable: false } });
+  const result = await fixGuild(guild, await auditGuild(guild), { dryRun: true, gapMs: 0 });
+  assert.deepEqual(ids(result.failed), ["a"]);
+  assert.deepEqual(ids(result.deleted), ["b"]);
+});
+
+test("delete error is recorded and run continues", async () => {
+  resetGuildState("f4");
+  const deletedIds = [];
+  const { guild } = geminiGuild("f4", {
+    onDelete: (id) => {
+      if (id === "a") throw new Error("rate limited");
+      deletedIds.push(id);
+    },
+  });
+  const result = await fixGuild(guild, await auditGuild(guild), { dryRun: false, gapMs: 0 });
+  assert.equal(result.failed.length, 1);
+  assert.equal(result.failed[0].reason, "rate limited");
+  assert.deepEqual(deletedIds, ["b"]);
+});
+
+test("stale records are pruned", async () => {
+  resetGuildState("f5");
+  roleMap.f5 = { "Playing Gone": "missing" };
+  autoManaged.f5 = new Set(["Playing Gone", "Orphan"]);
+  voiceChannelRoles.f5 = { vcX: "missing2" };
+  promotedRoles.f5 = ["missing3"];
+  originalPositions.f5 = { missing4: 3 };
+  const guild = makeGuild({ id: "f5", roles: [] });
+  const result = await fixGuild(guild, await auditGuild(guild), { dryRun: false, gapMs: 0 });
+  assert.equal(result.pruned, 5);
+  assert.deepEqual(roleMap.f5, {});
+  assert.equal(autoManaged.f5.size, 0);
+  assert.deepEqual(voiceChannelRoles.f5, {});
+  assert.deepEqual(promotedRoles.f5, []);
+  assert.deepEqual(originalPositions.f5, {});
+  assert.equal(result.changed, true);
 });

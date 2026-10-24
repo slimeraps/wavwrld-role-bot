@@ -1,6 +1,6 @@
 const { config, premadeRoleIdsSet } = require("./config");
 const { roleMap, autoManaged, promotedRoles, originalPositions, voiceChannelRoles } = require("./state");
-const { normalizeLookupKey, stripTimerPrefix } = require("./util");
+const { normalizeLookupKey, sleep, stripTimerPrefix } = require("./util");
 
 // Role Doctor: finds duplicate bot-style roles ("Playing X" / "In X") and
 // deletes every copy except keepers. Keepers are premade roles, the
@@ -82,9 +82,79 @@ async function auditGuild(guild) {
   };
 }
 
+// Drops every record of roleId. Runs *before* role.delete so events.js's
+// roleDelete handler sees an untracked role and doesn't post an
+// "External deletion" message per duplicate.
+function forgetRole(guildId, roleId) {
+  for (const [roleName, id] of Object.entries(roleMap[guildId] || {})) {
+    if (id !== roleId) continue;
+    delete roleMap[guildId][roleName];
+    autoManaged[guildId]?.delete(roleName);
+  }
+  for (const [channelId, id] of Object.entries(voiceChannelRoles[guildId] || {})) {
+    if (id === roleId) delete voiceChannelRoles[guildId][channelId];
+  }
+  if (promotedRoles[guildId]) promotedRoles[guildId] = promotedRoles[guildId].filter((id) => id !== roleId);
+  if (originalPositions[guildId]) delete originalPositions[guildId][roleId];
+}
+
+function pruneStale(guildId, stale) {
+  for (const roleName of stale.roleMap) delete roleMap[guildId][roleName];
+  for (const roleName of [...stale.roleMap, ...stale.autoManaged]) autoManaged[guildId]?.delete(roleName);
+  for (const channelId of stale.voice) delete voiceChannelRoles[guildId][channelId];
+  if (stale.promoted.length) {
+    const gone = new Set(stale.promoted);
+    promotedRoles[guildId] = promotedRoles[guildId].filter((roleId) => !gone.has(roleId));
+  }
+  for (const roleId of stale.positions) delete originalPositions[guildId][roleId];
+}
+
+async function fixGuild(guild, audit, { dryRun = config.dryRun, gapMs = 500 } = {}) {
+  const guildId = guild.id;
+  const deleted = [];
+  const failed = [];
+  let changed = false;
+  let first = true;
+
+  for (const entry of audit.groups.flatMap((group) => group.remove)) {
+    const role = guild.roles.cache.get(entry.id);
+    if (!role) continue;
+    if (!role.editable) {
+      failed.push({ id: role.id, name: role.name, reason: "role is above the bot or not editable" });
+      continue;
+    }
+    if (dryRun) {
+      deleted.push({ id: role.id, name: role.name });
+      continue;
+    }
+    if (!first && gapMs > 0) await sleep(gapMs);
+    first = false;
+
+    forgetRole(guildId, role.id);
+    changed = true;
+    try {
+      await role.delete("Role Doctor: duplicate role");
+      deleted.push({ id: role.id, name: role.name });
+    } catch (err) {
+      // The role stays untracked; the next audit flags it again.
+      failed.push({ id: role.id, name: role.name, reason: err.message });
+    }
+  }
+
+  const deletedIds = new Set(deleted.map((entry) => entry.id));
+  const roleExists = (roleId) => guild.roles.cache.has(roleId) && (dryRun || !deletedIds.has(roleId));
+  const { stale, staleCount } = findStale(guild, roleExists);
+  if (!dryRun && staleCount) {
+    pruneStale(guildId, stale);
+    changed = true;
+  }
+
+  return { dryRun, deleted, failed, pruned: staleCount, changed };
+}
+
 // Temporary until doctor-cmd.js lands.
 async function doctorCmd(ctx) {
   await ctx.reply("Doctor is being rebuilt.");
 }
 
-module.exports = { auditGuild, doctorCmd };
+module.exports = { auditGuild, fixGuild, doctorCmd };
