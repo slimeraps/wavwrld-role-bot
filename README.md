@@ -1,4 +1,4 @@
-# WAV Bot — 12.0.0 (Role Doctor rework)
+# WAV Bot — 12.1.0 (`/me` profile cards)
 
 **[View the landing page →](https://slimeraps.github.io/wavwrld-role-bot/)**
 
@@ -134,6 +134,7 @@ across cleanup so memory survives the restart.
 |---|---|---|
 | `/help` (`!help`, `!h`) | everyone | Print the public command reference. |
 | `/stats` (`!stats`, `!leaderboard`, `!lb`) | everyone | 30-day leaderboard PNG. |
+| `/me` (`!me`, `!me @user`) | everyone | Your voice + game stats card; `user:` shows someone else's. |
 | `/play`, `/skip`, `/pause`, `/resume`, `/stop`, `/queue`, `/nowplaying`, `/volume` | VIP role | Music player. |
 | `/cleanup` | owner | Full resync of all managed roles. |
 | `/doctor` | owner | Find duplicate bot roles; `fix:true` deletes every copy except premade ones. |
@@ -192,6 +193,9 @@ Env vars: `DISCORD_TOKEN`, `STATS_CHANNEL_ID`, `PANEL_TOKEN`, `PANEL_PORT`
   voice roles
 - `src/doctor.js` — Role Doctor core: duplicate audit, fix, report text
 - `src/doctor-cmd.js` — owner-only `/doctor` command (fix + per-guild resync)
+- `src/me-stats.js` — per-member numbers for `/me` (all-time, weekly, voice rank)
+- `src/me-card.js` — `/me` card renderer (layout A, same look as `/stats`)
+- `src/me-cmd.js` — `/me` command (panel image URL, text-embed fallback)
 - `src/unknown.js` — Unknown Activity Inbox recorder and owner command
 - `src/music.js` — music player init, queue commands, reaction picker
 - `src/stats.js` — `logActivity()` counters and the `/stats` embed
@@ -201,6 +205,30 @@ Env vars: `DISCORD_TOKEN`, `STATS_CHANNEL_ID`, `PANEL_TOKEN`, `PANEL_PORT`
 - `src/events.js` — all `client.on(...)` registrations
 
 ## Changelog
+
+## 12.1.0
+
+A personal stats card. `/me` (or `!me`) posts your card; `/me user:@buddy`
+(or `!me @buddy`) shows someone else's.
+
+- **All time** (since tracking began): total voice chat hours across every
+  channel, and your top 3 games with hours (gold/silver/bronze).
+- **Server rank** by all-time voice hours, counting members still in the
+  server (`#3 in WAV WRLD`, or `unranked` with no voice time).
+- **This week** strip: voice hours and top 3 games from the same rolling
+  weekly bucket `/stats` uses (and the upcoming Weekly Wrapped will).
+- Game names drop the `Playing ` prefix, and keys that land on the same name
+  (e.g. `Playing Valorant` + `Valorant` from a premade-only stint) are merged.
+  `Listening to …` / `Watching …` activities don't count as games.
+- Live sessions count immediately — no need to leave voice first.
+- Delivered like `/stats`: the bot replies with a panel URL
+  (`/me/<guildId>/<userId>.jpg`, public, 30 s cache, per-minute cache-bust)
+  that Discord's image proxy fetches. Without `PANEL_TOKEN` or a public URL it
+  replies with a text embed carrying the same numbers.
+- New `src/me-stats.js`, `src/me-card.js`, `src/me-cmd.js`;
+  `tracker.userBreakdown(guildId, type, period, userId)`; `stats-image.js`
+  exports its drawing helpers; `stats.js` gains `meImageUrl`.
+- `tests/`: new `me-stats`, `me-card`, `me-cmd`, `tracker-breakdown` suites.
 
 ## 12.0.0
 
