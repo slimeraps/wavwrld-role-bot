@@ -4,6 +4,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const { renderMeCard } = require("../src/me-card");
+const { renderMeImage } = require("../src/panel");
 
 function sampleStats(overrides = {}) {
   return {
@@ -50,4 +51,33 @@ test("renders extreme values", async () => {
     week: { voiceMinutes: 10_080, topGames: [{ name: longName, minutes: 10_000 }] },
   });
   assert.ok(isJpeg(await renderMeCard({ guildName: "G".repeat(100), stats, avatar: null })));
+});
+
+// ── panel route helper ───────────────────────────────────────────────────────
+
+function fakeClient(guildId) {
+  const guild = {
+    id: guildId,
+    name: "Panel Guild",
+    members: { cache: new Map([["111111111111111111", { id: "111111111111111111", displayName: "Alice", user: { bot: false } }]]) },
+  };
+  return { guilds: { cache: new Map([[guildId, guild]]) } };
+}
+
+test("renderMeImage caches per user", async () => {
+  const client = fakeClient("900000000000000001");
+  const first = await renderMeImage(client, "900000000000000001", "111111111111111111");
+  const again = await renderMeImage(client, "900000000000000001", "111111111111111111");
+  const other = await renderMeImage(client, "900000000000000001", "222222222222222222");
+  assert.equal(first.mime, "image/jpeg");
+  assert.ok(isJpeg(first.buffer));
+  assert.equal(again, first, "second call within TTL returns the cached entry");
+  assert.notEqual(other, first);
+});
+
+test("renderMeImage 404s unknown guild", async () => {
+  await assert.rejects(
+    renderMeImage({ guilds: { cache: new Map() } }, "900000000000000009", "111111111111111111"),
+    (err) => err.httpCode === 404 && err.message === "guild_not_found",
+  );
 });

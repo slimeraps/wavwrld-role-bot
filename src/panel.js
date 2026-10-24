@@ -2,7 +2,9 @@ const http = require("http");
 const crypto = require("crypto");
 const { collectRows, collectSyntheticRows, buildLiveActivitySnapshot } = require("./stats-channel");
 const { buildUserMembers, buildStatsTotals } = require("./stats");
-const { renderUsersDefault, renderLiveActivity } = require("./stats-image");
+const { renderUsersDefault, renderLiveActivity, loadUserAvatarCached } = require("./stats-image");
+const { buildMeStats } = require("./me-stats");
+const { renderMeCard } = require("./me-card");
 const { config } = require("./config");
 
 // ── live activity image cache ──────────────────────────────────────────
@@ -71,6 +73,34 @@ async function renderStatsImage(client, guildId) {
   });
   const entry = { buffer, mime: "image/jpeg", generatedAt: Date.now() };
   statsImageCache.set(guildId, entry);
+  return entry;
+}
+
+// ── /me card cache ─────────────────────────────────────────────────────
+// Same pattern as the stats image: /me replies with a panel URL that
+// Discord's image proxy fetches, cached per member for 30s.
+const ME_CACHE_TTL_MS = 30_000;
+const meImageCache = new Map(); // `${guildId}:${userId}` -> { buffer, mime, generatedAt }
+
+async function renderMeImage(client, guildId, userId) {
+  const cacheKey = `${guildId}:${userId}`;
+  const cached = meImageCache.get(cacheKey);
+  if (cached && Date.now() - cached.generatedAt < ME_CACHE_TTL_MS) {
+    return cached;
+  }
+  const guild = client.guilds.cache.get(guildId);
+  if (!guild) {
+    const e = new Error("guild_not_found");
+    e.httpCode = 404;
+    throw e;
+  }
+  const buffer = await renderMeCard({
+    guildName: guild.name,
+    stats: buildMeStats(guild, userId),
+    avatar: await loadUserAvatarCached(guild, userId),
+  });
+  const entry = { buffer, mime: "image/jpeg", generatedAt: Date.now() };
+  meImageCache.set(cacheKey, entry);
   return entry;
 }
 
@@ -441,6 +471,28 @@ function startPanel(client) {
       return;
     }
 
+    // Public, un-authed /me card. Same rationale as /stats: Discord's image
+    // proxy fetches it and can't send our key; the numbers are already
+    // visible inside the server via /stats.
+    const meMatch = url.pathname.match(/^\/me\/(\d{17,20})\/(\d{17,20})\.jpg$/);
+    if (meMatch) {
+      const [, guildId, userId] = meMatch;
+      renderMeImage(client, guildId, userId).then((entry) => {
+        res.writeHead(200, {
+          "Content-Type": entry.mime,
+          "Cache-Control": "public, max-age=60",
+          "Content-Length": entry.buffer.length,
+        });
+        res.end(entry.buffer);
+      }).catch((err) => {
+        const code = err.httpCode || 500;
+        res.writeHead(code, { "Content-Type": "text/plain" });
+        res.end(err.message);
+        if (code >= 500) console.error(`[panel] /me/${guildId}/${userId}.jpg failed:`, err);
+      });
+      return;
+    }
+
     // Public, un-authed live activity image. Same rationale as /stats: the
     // Discord image proxy fetches this URL when rendering the live activity
     // embed, and we can't make it send our PANEL_TOKEN. The data is visible
@@ -500,4 +552,4 @@ function startPanel(client) {
   return server;
 }
 
-module.exports = { startPanel, collectSyntheticRows, buildSnapshot, buildActiveSection };
+module.exports = { startPanel, collectSyntheticRows, buildSnapshot, buildActiveSection, renderMeImage };
