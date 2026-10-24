@@ -1113,6 +1113,14 @@ async function renderPlaying({ guildName, rows, totalActive, roleByName }) {
 }
 
 module.exports = {
+  // Shared drawing helpers (used by src/me-card.js).
+  PALETTE,
+  SCALE,
+  fmtTime,
+  roundRect,
+  drawText,
+  truncate,
+  drawCanvasBackground,
   renderUsersDefault,
   renderLiveActivity,
   LIVE_SECTIONS,
