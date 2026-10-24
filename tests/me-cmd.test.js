@@ -55,8 +55,21 @@ test("parseMeText reads mentions and ids", () => {
   assert.deepEqual(parseMeText([`<@${BOB}>`]), { userId: BOB });
   assert.deepEqual(parseMeText([`<@!${BOB}>`]), { userId: BOB });
   assert.deepEqual(parseMeText([BOB]), { userId: BOB });
-  assert.deepEqual(parseMeText(["hello"]), { userId: null });
+  assert.deepEqual(parseMeText(["hello"]), { userId: null, invalid: true });
+  assert.deepEqual(parseMeText([`<@&${BOB}>`]), { userId: null, invalid: true });
   assert.deepEqual(parseMeText([]), { userId: null });
+});
+
+test("unparseable target asks for a mention instead of showing the caller", async () => {
+  const ctx = makeCtx();
+  await meCmd(ctx, { userId: null, invalid: true });
+  assert.deepEqual(ctx.replies, ["Mention a member or give their ID."]);
+});
+
+test("unknown user with no data gets a text reply", async () => {
+  const ctx = makeCtx();
+  await meCmd(ctx, { userId: "987654321098765432" });
+  assert.deepEqual(ctx.replies, ["No stats for that user."]);
 });
 
 test("replies with image url when panel is configured", async () => {

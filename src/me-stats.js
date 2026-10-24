@@ -53,6 +53,13 @@ function periodStats(guildId, period, userId) {
   };
 }
 
+// A member of the guild, or someone who left but still has tracked time.
+// Anything else is a made-up ID — callers refuse it rather than render.
+function isKnownUser(guild, userId) {
+  if (guild.members.cache.has(userId)) return true;
+  return ["voice", "game"].some((type) => tracker.userBreakdown(guild.id, type, "lifetime", userId).total > 0);
+}
+
 function buildMeStats(guild, userId) {
   return {
     userId,
@@ -63,4 +70,4 @@ function buildMeStats(guild, userId) {
   };
 }
 
-module.exports = { gameDisplayName, isNonGameName, topEntries, buildMeStats };
+module.exports = { gameDisplayName, isNonGameName, topEntries, isKnownUser, buildMeStats };

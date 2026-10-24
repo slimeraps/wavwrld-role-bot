@@ -4,7 +4,9 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const { renderMeCard } = require("../src/me-card");
-const { renderMeImage } = require("../src/panel");
+const { renderMeImage, __meImageCache } = require("../src/panel");
+const tracker = require("../src/tracker");
+const { playtime } = require("../src/state");
 
 function sampleStats(overrides = {}) {
   return {
@@ -56,13 +58,45 @@ test("renders extreme values", async () => {
 // ── panel route helper ───────────────────────────────────────────────────────
 
 function fakeClient(guildId) {
+  const member = (id, displayName) => [id, { id, displayName, user: { bot: false } }];
   const guild = {
     id: guildId,
     name: "Panel Guild",
-    members: { cache: new Map([["111111111111111111", { id: "111111111111111111", displayName: "Alice", user: { bot: false } }]]) },
+    members: { cache: new Map([member("111111111111111111", "Alice"), member("222222222222222222", "Bob")]) },
   };
   return { guilds: { cache: new Map([[guildId, guild]]) } };
 }
+
+test("renderMeImage 404s a user who is neither a member nor tracked", async () => {
+  await assert.rejects(
+    renderMeImage(fakeClient("900000000000000002"), "900000000000000002", "123456789012345678"),
+    (err) => err.httpCode === 404 && err.message === "user_not_found",
+  );
+});
+
+test("renderMeImage still renders a member who left but has data", async () => {
+  const guildId = "900000000000000003";
+  tracker.userBreakdown(guildId, "voice", "lifetime", "nobody");
+  playtime[guildId].voice.lifetime = { vc1: { "444444444444444444": 30 } };
+  const entry = await renderMeImage(fakeClient(guildId), guildId, "444444444444444444");
+  assert.ok(isJpeg(entry.buffer));
+});
+
+test("renderMeImage evicts expired entries and caps the cache", async () => {
+  __meImageCache.clear();
+  for (let i = 0; i < 250; i++) {
+    __meImageCache.set(`old:${i}`, { buffer: Buffer.alloc(1), mime: "image/jpeg", generatedAt: 0 });
+  }
+  await renderMeImage(fakeClient("900000000000000004"), "900000000000000004", "111111111111111111");
+  assert.equal(__meImageCache.size, 1, "expired entries are dropped on insert");
+
+  for (let i = 0; i < 250; i++) {
+    __meImageCache.set(`fresh:${i}`, { buffer: Buffer.alloc(1), mime: "image/jpeg", generatedAt: Date.now() });
+  }
+  await renderMeImage(fakeClient("900000000000000004"), "900000000000000004", "222222222222222222");
+  assert.ok(__meImageCache.size <= 200, `cache size ${__meImageCache.size}`);
+  assert.ok(__meImageCache.has("900000000000000004:222222222222222222"), "newest entry is kept");
+});
 
 test("renderMeImage caches per user", async () => {
   const client = fakeClient("900000000000000001");

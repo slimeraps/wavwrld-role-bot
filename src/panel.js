@@ -3,7 +3,7 @@ const crypto = require("crypto");
 const { collectRows, collectSyntheticRows, buildLiveActivitySnapshot } = require("./stats-channel");
 const { buildUserMembers, buildStatsTotals } = require("./stats");
 const { renderUsersDefault, renderLiveActivity, loadUserAvatarCached } = require("./stats-image");
-const { buildMeStats } = require("./me-stats");
+const { buildMeStats, isKnownUser } = require("./me-stats");
 const { renderMeCard } = require("./me-card");
 const { config } = require("./config");
 
@@ -78,9 +78,25 @@ async function renderStatsImage(client, guildId) {
 
 // ── /me card cache ─────────────────────────────────────────────────────
 // Same pattern as the stats image: /me replies with a panel URL that
-// Discord's image proxy fetches, cached per member for 30s.
+// Discord's image proxy fetches, cached per member for 30s. The route is
+// public, so unknown IDs 404 before rendering and the cache is bounded
+// (expired entries dropped on insert, oldest evicted past the cap) —
+// otherwise a loop over random IDs could exhaust the VM's memory.
 const ME_CACHE_TTL_MS = 30_000;
+const ME_CACHE_MAX = 200;
 const meImageCache = new Map(); // `${guildId}:${userId}` -> { buffer, mime, generatedAt }
+
+function storeMeImage(cacheKey, entry) {
+  const now = Date.now();
+  for (const [key, cached] of meImageCache) {
+    if (now - cached.generatedAt >= ME_CACHE_TTL_MS) meImageCache.delete(key);
+  }
+  meImageCache.delete(cacheKey);
+  while (meImageCache.size >= ME_CACHE_MAX) {
+    meImageCache.delete(meImageCache.keys().next().value);
+  }
+  meImageCache.set(cacheKey, entry);
+}
 
 async function renderMeImage(client, guildId, userId) {
   const cacheKey = `${guildId}:${userId}`;
@@ -94,13 +110,18 @@ async function renderMeImage(client, guildId, userId) {
     e.httpCode = 404;
     throw e;
   }
+  if (!isKnownUser(guild, userId)) {
+    const e = new Error("user_not_found");
+    e.httpCode = 404;
+    throw e;
+  }
   const buffer = await renderMeCard({
     guildName: guild.name,
     stats: buildMeStats(guild, userId),
     avatar: await loadUserAvatarCached(guild, userId),
   });
   const entry = { buffer, mime: "image/jpeg", generatedAt: Date.now() };
-  meImageCache.set(cacheKey, entry);
+  storeMeImage(cacheKey, entry);
   return entry;
 }
 
@@ -552,4 +573,4 @@ function startPanel(client) {
   return server;
 }
 
-module.exports = { startPanel, collectSyntheticRows, buildSnapshot, buildActiveSection, renderMeImage };
+module.exports = { startPanel, collectSyntheticRows, buildSnapshot, buildActiveSection, renderMeImage, __meImageCache: meImageCache };

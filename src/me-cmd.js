@@ -1,6 +1,6 @@
 const { EmbedBuilder } = require("discord.js");
 const { meImageUrl } = require("./stats");
-const { buildMeStats } = require("./me-stats");
+const { buildMeStats, isKnownUser } = require("./me-stats");
 const { fmtHours } = require("./me-card");
 const { sendMonitoring } = require("./monitoring");
 
@@ -12,10 +12,14 @@ const { sendMonitoring } = require("./monitoring");
 const SNOWFLAKE = /^(\d{17,20})$/;
 const MENTION = /^<@!?(\d{17,20})>$/;
 
+// `!me` → caller; `!me @user` / `!me <id>` → that user. Anything else
+// (plain "Bob", a role mention) is flagged invalid so we don't silently
+// show the caller's own card.
 function parseMeText(args) {
-  const first = String(args[0] || "");
+  if (!args.length) return { userId: null };
+  const first = String(args[0]);
   const match = first.match(MENTION) || first.match(SNOWFLAKE);
-  return { userId: match ? match[1] : null };
+  return match ? { userId: match[1] } : { userId: null, invalid: true };
 }
 
 function gameLines(games, emptyText) {
@@ -37,12 +41,14 @@ function buildMeEmbed(guild, stats) {
     .setFooter({ text: stats.rank ? `#${stats.rank} in ${guild.name} by voice hours` : "unranked" });
 }
 
-async function meCmd(ctx, { userId } = {}) {
+async function meCmd(ctx, { userId, invalid } = {}) {
   const guild = ctx.guild;
   if (!guild) return ctx.reply("This command only works in a server.");
+  if (invalid) return ctx.reply("Mention a member or give their ID.");
 
   const targetId = userId || ctx.author.id;
   if (guild.members.cache.get(targetId)?.user?.bot) return ctx.reply("Bots don't have stats.");
+  if (!isKnownUser(guild, targetId)) return ctx.reply("No stats for that user.");
 
   await ctx.defer();
 
