@@ -327,6 +327,32 @@ function userTotals(guildId, type, period) {
     .sort((a, b) => b.minutes - a.minutes);
 }
 
+// One user's minutes per key for a type/period, with their still-open
+// sessions of that type folded in. Returns { total, perKey }.
+function userBreakdown(guildId, type, period, userId) {
+  ensureGuildBuckets(guildId);
+  checkResets(guildId);
+  const bucket = playtime[guildId][type][period] || {};
+
+  const perKey = {};
+  let total = 0;
+  function add(key, minutes) {
+    if (minutes <= 0) return;
+    perKey[key] = (perKey[key] || 0) + minutes;
+    total += minutes;
+  }
+
+  for (const [key, byUser] of Object.entries(bucket)) {
+    if (byUser[userId]) add(key, byUser[userId]);
+  }
+  for (const open of Object.values(openSessions[guildId] || {})) {
+    if (open.type !== type || open.subjectId !== userId) continue;
+    add(open.key, Math.floor((Date.now() - open.startedAt) / 60_000));
+  }
+
+  return { total, perKey };
+}
+
 // Zero out a single rolling bucket (daily/weekly/monthly) and reset its window
 // start to now. Open sessions are left running — when they close they credit
 // elapsed minutes into the freshly-zeroed bucket, matching the natural rollover
@@ -360,6 +386,7 @@ module.exports = {
   bootEnd,
   leaderboard,
   userTotals,
+  userBreakdown,
   getResets,
   resetPeriod,
   getVoiceChannelName,
