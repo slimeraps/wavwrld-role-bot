@@ -51,6 +51,15 @@ function statsImageUrl(guild) {
   return `${base}/stats/${guild.id}.jpg?t=${bucket}`;
 }
 
+// /me card URL — same gating and per-minute cache bucket as statsImageUrl.
+function meImageUrl(guild, userId) {
+  if (!process.env.PANEL_TOKEN) return null;
+  const base = panelBaseUrl();
+  if (!base) return null;
+  const bucket = Math.floor(Date.now() / 60_000);
+  return `${base}/me/${guild.id}/${userId}.jpg?t=${bucket}`;
+}
+
 // Live activity image URL — same panel-served pattern as statsImageUrl but on a
 // 15-second cache bucket so Discord's image proxy refetches each tick. The
 // updateStatsEmbed auto-updater edits the embed once per 15 s; the URL change
@@ -324,4 +333,5 @@ module.exports = {
   // exported for the stats-channel auto-updaters (10.4.1: bare URL, not embed)
   liveImageUrl,
   statsImageUrl,
+  meImageUrl,
 };

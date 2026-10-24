@@ -8,6 +8,7 @@ const tracker = require("./tracker");
 const { flushPendingSave } = require("./state");
 const { doctorCmd } = require("./doctor-cmd");
 const { unknownCmd } = require("./unknown");
+const { meCmd, parseMeText } = require("./me-cmd");
 
 function ctxFromMessage(message) {
   return {
@@ -59,6 +60,7 @@ const HELP_TEXT = [
   "**📊 Open to everyone**",
   "• `/help` (`!help`, `!h`) — show this message",
   "• `/stats` (`!stats`, `!leaderboard`, `!lb`) — top members in the last 30 days, voice + game time, with each member's top game",
+  "• `/me` (`!me`, `!me @user`) — your stats card: all-time voice hours, top 3 games, server rank, and this week",
   "",
   "**🎵 Music — requires the VIP role**",
   "_Join a voice channel first — the bot follows whoever ran the command._",
@@ -139,6 +141,16 @@ const COMMANDS = [
     description: "Top members in the last 30 days — voice + game time with top game played",
     aliases: ["leaderboard", "lb"],
     handler: statsCmd,
+  },
+  {
+    name: "me",
+    description: "Your voice + game stats card",
+    options: [
+      { name: "user", type: ApplicationCommandOptionType.User, required: false, description: "Show someone else's card" },
+    ],
+    parseText: parseMeText,
+    parseSlash: (i) => ({ userId: i.options.getUser("user")?.id || null }),
+    handler: meCmd,
   },
   {
     name: "play",
