@@ -71,36 +71,40 @@ async function cleanupEmptyManagedRoles(guild) {
   }
 }
 
+async function resyncGuild(guild) {
+  const botMember = guild.members.me;
+  if (!botMember || !botMember.permissions.has("ManageRoles")) {
+    console.warn(`Skipping guild ${guild.name} – missing permissions.`);
+    return;
+  }
+
+  try {
+    await guild.members.fetch();
+  } catch (err) {
+    console.error(`Failed to fetch members in ${guild.name}:`, err.message);
+    return;
+  }
+
+  let processed = 0;
+  for (const member of guild.members.cache.values()) {
+    if (member.user.bot) continue;
+    if (!member.presence) continue;
+    await handlePresence(member.presence);
+    processed++;
+    await sleep(100);
+  }
+  console.log(`Resynced ${processed} members in ${guild.name}`);
+  await sendMonitoring(`✅ Resynced ${processed} members in **${guild.name}**`);
+
+  await initVoiceRolesForGuild(guild);
+}
+
 async function resyncAllMembers() {
   console.log("Starting full presence resync...");
   await sendMonitoring("🔄 **Resyncing all member presences** – re‑evaluating roles based on current `onlyUsePremadeRoles` setting.");
 
   for (const guild of client.guilds.cache.values()) {
-    const botMember = guild.members.me;
-    if (!botMember || !botMember.permissions.has("ManageRoles")) {
-      console.warn(`Skipping guild ${guild.name} – missing permissions.`);
-      continue;
-    }
-
-    try {
-      await guild.members.fetch();
-    } catch (err) {
-      console.error(`Failed to fetch members in ${guild.name}:`, err.message);
-      continue;
-    }
-
-    let processed = 0;
-    for (const member of guild.members.cache.values()) {
-      if (member.user.bot) continue;
-      if (!member.presence) continue;
-      await handlePresence(member.presence);
-      processed++;
-      await sleep(100);
-    }
-    console.log(`Resynced ${processed} members in ${guild.name}`);
-    await sendMonitoring(`✅ Resynced ${processed} members in **${guild.name}**`);
-
-    await initVoiceRolesForGuild(guild);
+    await resyncGuild(guild);
   }
 
   console.log("Full presence resync completed.");
@@ -410,6 +414,7 @@ module.exports = {
   cleanupEmptyManagedRoles,
   deleteEmptyBotCreatedRole,
   resyncAllMembers,
+  resyncGuild,
   cleanupAndResync,
   handleCleanupCmd,
   isBotCreatedManagedRole,

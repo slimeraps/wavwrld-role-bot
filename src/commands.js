@@ -6,7 +6,7 @@ const m = require("./music");
 const { statsCmd, statsTestCmd } = require("./stats");
 const tracker = require("./tracker");
 const { flushPendingSave } = require("./state");
-const { doctorCmd } = require("./doctor");
+const { doctorCmd } = require("./doctor-cmd");
 const { unknownCmd } = require("./unknown");
 
 function ctxFromMessage(message) {

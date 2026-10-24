@@ -198,9 +198,4 @@ function formatFixReport(result, { resynced = false } = {}) {
   return fitLines(head, body, [], "failures");
 }
 
-// Temporary until doctor-cmd.js lands.
-async function doctorCmd(ctx) {
-  await ctx.reply("Doctor is being rebuilt.");
-}
-
-module.exports = { auditGuild, fixGuild, formatAuditReport, formatFixReport, doctorCmd };
+module.exports = { auditGuild, fixGuild, formatAuditReport, formatFixReport };
